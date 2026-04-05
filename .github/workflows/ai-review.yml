@@ -19,6 +19,15 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Debug File System
+        run: |
+          echo "Checking what files exist..."
+          ls -la
+          echo "Checking inside .github..."
+          ls -la .github/
+          echo "Checking inside .github/scripts..."
+          ls -la .github/scripts/ || echo "Scripts folder not found!"
+          
       - name: Run AI Code Review
         uses: actions/github-script@v7
         env:

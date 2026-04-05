@@ -1,0 +1,29 @@
+name: AI PR Reviewer
+
+on:
+  pull_request:
+    types: [opened, synchronize] # Runs on new PRs and when new commits are pushed
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run AI Code Review
+        uses: actions/github-script@v7
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        with:
+          script: |
+            const script = require('./.github/scripts/review.js')
+            await script({github, context})

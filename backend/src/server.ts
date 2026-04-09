@@ -19,7 +19,7 @@ app.post('api/webhooks/github', async (req, res) =>{
     const event = req.headers['x-github-event'];
     const action = req.body.action;
 
-    if (event === 'pull_request' &&(action ==='opened' || action ==='synchroniz')){
+    if (event === 'pull_request' &&(action ==='opened' || action ==='synchronize')){
         console.log("New PR Opened");
         //Extract the data from the github payload
         const pr = req.body.pull_request;

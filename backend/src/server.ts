@@ -11,7 +11,7 @@ app.use(express.json());
 //Init gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
-app.post('api/webhooks/github', async (req, res) =>{
+app.post('/api/webhooks/github', async (req, res) => {
     
     //Always acklowledge so github doesn't timeout
     res.status(200).send('Webhook received.');

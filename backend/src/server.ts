@@ -28,7 +28,7 @@ const githubWebhookHandler = async (req: express.Request, res: express.Response)
         const sig = req.headers['x-hub-signature-256'];
         if (!raw || !verifyGithubSignature256(raw, sig, webhookSecret)) {
             console.warn('Webhook rejected: invalid or missing X-Hub-Signature-256');
-            res.status(401).send('Invalid signature');
+            res.status(401).send('Invalid signatur');
             return;
         }
     }
@@ -68,7 +68,7 @@ const githubWebhookHandler = async (req: express.Request, res: express.Response)
 
             console.log('Sending PR details to gemini for review...');
 
-            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
             //The prompt
             const prompt = `
@@ -106,6 +106,6 @@ app.listen(PORT, () => {
     console.log(
         webhookSecret
             ? 'Webhook HMAC verification enabled (GITHUB_WEBHOOK_SECRET).'
-            : 'Webhook HMAC verification off — add GITHUB_WEBHOOK_SECRET to match the secret in GitHub webhook settings.',
+            : 'Webhook HMAC verification off — add GITHUB_WEBHOOK_SECRET to match the secret in GitHub webhook settings',
     );
 });

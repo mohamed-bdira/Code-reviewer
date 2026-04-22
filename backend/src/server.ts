@@ -31,7 +31,7 @@ A junior developer just opened a new Pull Request.
 Title: ${title}
 Description: ${description || 'No description provided.'}
 
-Provide a short, encouraging and professional review of what you expect to see in a PR with this title and description. Keep it under 4 paragraphss.
+Provide a short, encouraging and professional review of what you expect to see in a PR with this title and description. Keep it under 4 paragraphs.
 `.trim();
 }
 

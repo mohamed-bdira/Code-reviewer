@@ -13,7 +13,7 @@ const adapter = new PrismaPg({connectionString});
 const prisma = new PrismaClient({adapter});
 
 async function main (){
-    console.log('Seeding database..');
+    console.log('Seeding database...');
 
     //Create a user and automaticall ycreate a repo, PR, and reviews linked to them
     const dummyData = await prisma.user.upsert({

@@ -149,8 +149,24 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
             throw new Error('missing required repository/PR fields in webhook payload');
         }
 
-        const repoConfig = await RepoConfig.findOne({ repoFullName }).lean<RepoConfigSnapshot | null>();
-        const effectiveConfig = getEffectiveRepoConfig(repoConfig);
+        // --- A. FETCH CONFIG FROM MONGODB ---
+        // Look up this specific repository in Atlas to get the user's settings
+        let config = await RepoConfig.findOne({ repoFullName });
+
+        // If the user hasn't configured this repo yet, create it AND save it to the DB
+        if (!config) {
+            console.log("No config found in DB, creating default and saving to Atlas...");
+            config = new RepoConfig({
+                installationId: String(process.env.GITHUB_INSTALLATION_ID ?? ""),
+                repoFullName,
+            });
+
+            // THIS is the magic line that actually writes to MongoDB Atlas
+            await config.save();
+            console.log("✅ New repository config saved to Database!");
+        }
+
+        const effectiveConfig = getEffectiveRepoConfig(config.toObject());
 
         console.log("Downloading code diffs from Github...");
         const { data: prDiffPayload } = await octokit.rest.pulls.get({

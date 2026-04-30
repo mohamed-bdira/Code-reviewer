@@ -20,7 +20,7 @@ if (!mongoUri) {
     console.error('MONGO_URI is missing. Set it in the environment before starting the server.');
 } else {
     mongoose.connect(mongoUri)
-        .then(() => console.log('Connected to MongoDB!'))
+        .then(() => console.log('Connected to MongoDB'))
         .catch((err) => console.error('MongoDB connection error:', err));
 }
 

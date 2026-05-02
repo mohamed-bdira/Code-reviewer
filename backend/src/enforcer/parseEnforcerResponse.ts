@@ -1,0 +1,274 @@
+/** Minimum security score when a `security` dimension is present; below this, merge is not recommended. */
+export const SECURITY_VETO_THRESHOLD = 50;
+
+const DEFAULT_DIMENSIONS = ['security', 'style', 'usability'] as const;
+
+export type EnforcerPayload = {
+    scores: Record<string, number>;
+    notes: Record<string, string>;
+    blockers: string[];
+};
+
+export function buildScoreDimensions(focusAreas: string[]): string[] {
+    const set = new Set<string>();
+    for (const d of DEFAULT_DIMENSIONS) {
+        set.add(d);
+    }
+    for (const raw of focusAreas) {
+        const k = String(raw).trim().toLowerCase();
+        if (k) {
+            set.add(k);
+        }
+    }
+    return [...set].sort();
+}
+
+function clampScore(n: unknown): number {
+    if (typeof n !== 'number' || Number.isNaN(n)) {
+        return 0;
+    }
+    return Math.min(100, Math.max(0, Math.round(n)));
+}
+
+/** Extract JSON object from last ```json ... ``` fence, else balanced `{`…`}` from the end. */
+export function extractJsonObjectString(raw: string): { jsonStr: string; fullMatchEnd: number; fullMatchStart: number } | null {
+    const fencePattern = /```(?:json)?\s*([\s\S]*?)```/gi;
+    let lastFence: { jsonStr: string; fullMatchStart: number; fullMatchEnd: number } | null = null;
+    let m: RegExpExecArray | null;
+    while ((m = fencePattern.exec(raw)) !== null) {
+        const inner = m[1] ?? '';
+        lastFence = {
+            jsonStr: inner.trim(),
+            fullMatchStart: m.index,
+            fullMatchEnd: m.index + m[0].length,
+        };
+    }
+    if (lastFence) {
+        return lastFence;
+    }
+
+    const start = raw.lastIndexOf('{');
+    if (start === -1) {
+        return null;
+    }
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = start; i < raw.length; i++) {
+        const c = raw[i];
+        if (inString) {
+            if (escape) {
+                escape = false;
+            } else if (c === '\\') {
+                escape = true;
+            } else if (c === '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (c === '"') {
+            inString = true;
+            continue;
+        }
+        if (c === '{') {
+            depth++;
+        } else if (c === '}') {
+            depth--;
+            if (depth === 0) {
+                return {
+                    jsonStr: raw.slice(start, i + 1),
+                    fullMatchStart: start,
+                    fullMatchEnd: i + 1,
+                };
+            }
+        }
+    }
+    return null;
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+    return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+export function parseEnforcerPayload(obj: unknown): EnforcerPayload | null {
+    if (!isPlainObject(obj)) {
+        return null;
+    }
+    const scoresRaw = obj.scores;
+    if (!isPlainObject(scoresRaw)) {
+        return null;
+    }
+    const scores: Record<string, number> = {};
+    for (const [k, v] of Object.entries(scoresRaw)) {
+        const key = k.trim().toLowerCase();
+        scores[key] = clampScore(v);
+    }
+    if (Object.keys(scores).length === 0) {
+        return null;
+    }
+
+    const notes: Record<string, string> = {};
+    if (isPlainObject(obj.notes)) {
+        for (const [k, v] of Object.entries(obj.notes)) {
+            notes[k.trim().toLowerCase()] = typeof v === 'string' ? v : String(v);
+        }
+    }
+
+    let blockers: string[] = [];
+    if (Array.isArray(obj.blockers)) {
+        blockers = obj.blockers.filter((b) => typeof b === 'string' && b.trim().length > 0).map((b) => b.trim());
+    }
+
+    return { scores, notes, blockers };
+}
+
+export type MergeEvaluation = {
+    mergeRecommended: boolean;
+    overall: number;
+    reasons: string[];
+};
+
+export function evaluateMergeReadiness(
+    data: EnforcerPayload,
+    mergeMinScore: number,
+    securityVetoThreshold: number = SECURITY_VETO_THRESHOLD,
+): MergeEvaluation {
+    const values = Object.values(data.scores);
+    const overall = values.length ? Math.min(...values) : 0;
+    const reasons: string[] = [];
+
+    if (data.blockers.length > 0) {
+        reasons.push(`Blockers present (${data.blockers.length}): policy requires resolution before merge.`);
+    }
+    if (overall < mergeMinScore) {
+        reasons.push(`Overall score ${overall} is below minimum ${mergeMinScore} (minimum of section scores).`);
+    }
+    if (Object.prototype.hasOwnProperty.call(data.scores, 'security')) {
+        const sec = data.scores['security'];
+        if (typeof sec === 'number' && sec < securityVetoThreshold) {
+            reasons.push(`Security score ${sec} is below veto threshold ${securityVetoThreshold}.`);
+        }
+    }
+
+    const mergeRecommended = reasons.length === 0;
+    return { mergeRecommended, overall, reasons };
+}
+
+export type ParsedEnforcerResult = {
+    data: EnforcerPayload | null;
+    prose: string;
+    parseError: string | null;
+};
+
+export function parseEnforcerResponse(raw: string): ParsedEnforcerResult {
+    const extracted = extractJsonObjectString(raw);
+    if (!extracted) {
+        return {
+            data: null,
+            prose: raw.trim(),
+            parseError: 'No JSON block found in model output.',
+        };
+    }
+
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(extracted.jsonStr);
+    } catch {
+        return {
+            data: null,
+            prose: raw.trim(),
+            parseError: 'JSON in fence could not be parsed.',
+        };
+    }
+
+    const data = parseEnforcerPayload(parsed);
+    if (!data) {
+        return {
+            data: null,
+            prose: raw.trim(),
+            parseError: 'JSON did not match enforcer shape (scores required).',
+        };
+    }
+
+    const head = raw.slice(0, extracted.fullMatchStart).trim();
+    const tail = raw.slice(extracted.fullMatchEnd).trim();
+    const prose = [head, tail].filter(Boolean).join('\n\n').trim();
+
+    return {
+        data,
+        prose,
+        parseError: null,
+    };
+}
+
+function escapeCell(s: string): string {
+    return s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+}
+
+export function formatEnforcerGithubBody(options: {
+    enforcementLevel: 'warning' | 'error';
+    mergeRecommended: boolean;
+    overall: number;
+    mergeMinScore: number;
+    data: EnforcerPayload | null;
+    prose: string;
+    reasons: string[];
+    parseError: string | null;
+}): string {
+    const lines: string[] = [];
+    lines.push('## Automated review (enforcer)');
+    lines.push('');
+
+    if (!options.mergeRecommended) {
+        if (options.enforcementLevel === 'error') {
+            lines.push('**Not ready to merge per policy** (thresholds or blockers not satisfied).');
+        } else {
+            lines.push('**Merge not recommended** (see scores and notes below).');
+        }
+        lines.push('');
+    } else {
+        lines.push('**Ready to merge** from an automated scoring perspective (still use human judgment).');
+        lines.push('');
+    }
+
+    if (options.parseError) {
+        lines.push(`> ⚠️ Structured scores unavailable: ${options.parseError}`);
+        lines.push('');
+    }
+
+    if (options.data) {
+        lines.push(`**Overall (min of sections):** ${options.overall} — **Minimum bar:** ${options.mergeMinScore}`);
+        lines.push('');
+        lines.push('| Section | Score | Note |');
+        lines.push('| --- | ---: | --- |');
+        const keys = Object.keys(options.data.scores).sort();
+        for (const k of keys) {
+            const note = options.data.notes[k] ?? '—';
+            lines.push(`| ${escapeCell(k)} | ${options.data.scores[k]} | ${escapeCell(note)} |`);
+        }
+        lines.push('');
+        if (options.data.blockers.length > 0) {
+            lines.push('**Blockers:**');
+            for (const b of options.data.blockers) {
+                lines.push(`- ${b}`);
+            }
+            lines.push('');
+        }
+    }
+
+    if (options.reasons.length > 0) {
+        lines.push('**Why merge may be blocked:**');
+        for (const r of options.reasons) {
+            lines.push(`- ${r}`);
+        }
+        lines.push('');
+    }
+
+    if (options.prose) {
+        lines.push('### Review');
+        lines.push('');
+        lines.push(options.prose);
+    }
+
+    return lines.join('\n');
+}

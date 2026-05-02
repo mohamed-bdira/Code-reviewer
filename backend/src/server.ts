@@ -8,6 +8,12 @@ import { createAppAuth } from '@octokit/auth-app';
 import { Octokit } from 'octokit';
 import RepoConfig, { type IRepoConfig } from '../models/RepoConfig.js';
 import mongoose from 'mongoose';
+import {
+    buildScoreDimensions,
+    evaluateMergeReadiness,
+    formatEnforcerGithubBody,
+    parseEnforcerResponse,
+} from './enforcer/parseEnforcerResponse.js';
 
 dotenv.config();
 
@@ -99,7 +105,15 @@ function runPythonReview(prompt: string, diff: string): Promise<string> {
     });
 }
 
-type RepoConfigSnapshot = Pick<IRepoConfig, 'focusAreas' | 'enforcementLevel' | 'useAstGrep' | 'customRules'>;
+type RepoConfigSnapshot = Pick<
+    IRepoConfig,
+    'focusAreas' | 'enforcementLevel' | 'useAstGrep' | 'customRules' | 'mergeMinScore'
+>;
+
+function clampMergeMinScore(n: number | undefined): number {
+    const v = n ?? 70;
+    return Math.min(100, Math.max(0, Math.round(Number(v))));
+}
 
 function getEffectiveRepoConfig(repoConfig: RepoConfigSnapshot | null) {
     return {
@@ -107,6 +121,7 @@ function getEffectiveRepoConfig(repoConfig: RepoConfigSnapshot | null) {
         enforcementLevel: repoConfig?.enforcementLevel ?? 'warning',
         useAstGrep: repoConfig?.useAstGrep ?? false,
         customRules: repoConfig?.customRules?.trim() || 'Ensure standard REST principles are followed.',
+        mergeMinScore: clampMergeMinScore(repoConfig?.mergeMinScore as number | undefined),
     };
 }
 
@@ -187,18 +202,29 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
         
         console.log(`Analyzing PR #${prNumber}: ${prTitle}`);
 
+        const scoreDimensions = buildScoreDimensions(effectiveConfig.focusAreas);
+        const dimensionsList = scoreDimensions.join(', ');
+
         const prompt = `You are a senior software engineer reviewing a pull request.
 Repository: ${repoFullName}
 PR title: ${prTitle}
 PR description: ${prDescription}
 Enforcement level: ${effectiveConfig.enforcementLevel}
 Focus areas: ${effectiveConfig.focusAreas.join(', ')}
+Score sections (you MUST score each): ${dimensionsList}
+Merge minimum (minimum of section scores must be >= this for a green merge signal): ${effectiveConfig.mergeMinScore}
 Use ast-grep signal: ${effectiveConfig.useAstGrep ? 'yes' : 'no'}
 Additional repository rules: ${effectiveConfig.customRules}
 Diff status: ${hasDiff ? 'available (truncated to 10k chars if needed)' : 'missing'}
 
-Please provide a detailed and actionable review based on this context and prioritize findings from the provided code diff.
-Focus on architecture, potential edge cases, security concerns, and keep a professional tone.
+Provide a detailed, actionable review (architecture, edge cases, security, tone professional). Prioritize findings from the code diff.
+
+After your narrative review, output exactly one JSON object in a fenced code block with language tag json. Use these keys:
+- "scores": object whose keys are exactly these section names (lowercase): ${dimensionsList.split(', ').map((s) => `"${s}"`).join(', ')}. Each value is an integer from 0 to 100.
+- "notes": object with the same keys as "scores"; each value is one short line explaining that score.
+- "blockers": array of strings listing critical issues that must be fixed before merge; use [] if none.
+
+Do not put any text after the closing \`\`\` of that JSON block.
 
 BEGIN_DIFF
 ${hasDiff ? diffString : '[No diff content returned by GitHub API]'}
@@ -207,11 +233,47 @@ END_DIFF`;
         console.log('Generating review with AI...');
         const aiReviewText = await runPythonReview(prompt, diffString);
 
+        const parsed = parseEnforcerResponse(aiReviewText);
+        let effectiveData = parsed.data;
+        let parseError = parsed.parseError;
+        if (effectiveData) {
+            const scored = effectiveData;
+            const missingDims = scoreDimensions.filter((d) => !(d in scored.scores));
+            if (missingDims.length > 0) {
+                effectiveData = null;
+                parseError = `Missing scores for sections: ${missingDims.join(', ')}`;
+            }
+        }
+
+        let mergeRecommended = false;
+        let overall = 0;
+        let reasons: string[] = [];
+
+        if (effectiveData) {
+            const ev = evaluateMergeReadiness(effectiveData, effectiveConfig.mergeMinScore);
+            mergeRecommended = ev.mergeRecommended;
+            overall = ev.overall;
+            reasons = ev.reasons;
+        } else {
+            reasons = parseError ? [parseError] : ['Structured output missing.'];
+        }
+
+        const commentBody = formatEnforcerGithubBody({
+            enforcementLevel: effectiveConfig.enforcementLevel,
+            mergeRecommended: Boolean(effectiveData && mergeRecommended),
+            overall,
+            mergeMinScore: effectiveConfig.mergeMinScore,
+            data: effectiveData,
+            prose: parsed.prose || aiReviewText.trim(),
+            reasons,
+            parseError,
+        });
+
         await octokit.rest.issues.createComment({
             owner: repoOwner,
             repo: repoName,
             issue_number: prNumber,
-            body: `Automated review\n\n${aiReviewText}`,
+            body: commentBody,
         });
 
         console.log('Review posted to GitHub.');

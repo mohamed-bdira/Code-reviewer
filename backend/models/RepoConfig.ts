@@ -8,6 +8,7 @@ export interface IRepoConfig extends Document {
     enforcementLevel: 'warning' | 'error';
     useAstGrep: boolean;
     customRules: string;
+    mergeMinScore: number;
 }
 
 //Define the Mongoose Schema
@@ -17,7 +18,8 @@ const RepoConfigSchema: Schema = new Schema({
     focusAreas: {type: [String], default: ['security', 'style']},
     enforcementLevel: {type: String, enum: ['warning', 'error'], default: 'warning'},
     useAstGrep: {type: Boolean, default: false},
-    customRules: {type: String, default: 'Ensure standard REST principles are followed.'}
+    customRules: {type: String, default: 'Ensure standard REST principles are followed.'},
+    mergeMinScore: {type: Number, default: 70, min: 0, max: 100},
 }, {
     timestamps: true //Auto adds createdat and updatedat
 });

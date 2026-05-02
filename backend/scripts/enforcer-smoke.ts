@@ -23,7 +23,8 @@ Narrative review here.
 {
   "scores": { "security": 80, "style": 90, "usability": 85 },
   "notes": { "security": "ok", "style": "ok", "usability": "ok" },
-  "blockers": []
+  "blockers": [],
+  "bugs": []
 }
 \`\`\`
 `;
@@ -38,7 +39,7 @@ Narrative review here.
 
 {
     const lowSec = parseEnforcerResponse(`\`\`\`json
-{"scores":{"security":40,"style":90,"usability":90},"notes":{},"blockers":[]}
+{"scores":{"security":40,"style":90,"usability":90},"notes":{},"blockers":[],"bugs":[]}
 \`\`\``);
     const ev = evaluateMergeReadiness(lowSec.data!, 70);
     assert('security veto', !ev.mergeRecommended);
@@ -46,7 +47,7 @@ Narrative review here.
 
 {
     const blockers = parseEnforcerResponse(`\`\`\`json
-{"scores":{"security":100,"style":100,"usability":100},"notes":{},"blockers":["SQL injection"]}
+{"scores":{"security":100,"style":100,"usability":100},"notes":{},"blockers":["SQL injection"],"bugs":[]}
 \`\`\``);
     const ev = evaluateMergeReadiness(blockers.data!, 70);
     assert('blockers block merge', !ev.mergeRecommended);
@@ -67,8 +68,21 @@ Narrative review here.
         prose: 'hello',
         reasons: [],
         parseError: null,
+        diffFencedBody: '+add line',
+        diffWasTruncated: false,
+        findingsRecorded: 0,
     });
-    assert('markdown has table', body.includes('| Section |') && body.includes('Ready to merge'));
+    assert(
+        'markdown has table and diff',
+        body.includes('| Section |') && body.includes('Ready to merge') && body.includes('```diff'),
+    );
+}
+
+{
+    const withBugs = parseEnforcerResponse(`\`\`\`json
+{"scores":{"security":70,"style":70,"usability":70},"notes":{},"blockers":[],"bugs":[{"category":"security","file":"src/x.ts","lineStart":1,"lineEnd":3,"description":"issue"}]}
+\`\`\``);
+    assert('parses bugs', withBugs.data?.bugs.length === 1 && withBugs.data.bugs[0]?.file === 'src/x.ts');
 }
 
 console.log('\nAll enforcer smoke checks passed.');

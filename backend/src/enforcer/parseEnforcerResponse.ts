@@ -3,10 +3,19 @@ export const SECURITY_VETO_THRESHOLD = 50;
 
 const DEFAULT_DIMENSIONS = ['security', 'style', 'usability'] as const;
 
+export type ReviewBugInput = {
+    category: string;
+    file: string;
+    lineStart?: number;
+    lineEnd?: number;
+    description: string;
+};
+
 export type EnforcerPayload = {
     scores: Record<string, number>;
     notes: Record<string, string>;
     blockers: string[];
+    bugs: ReviewBugInput[];
 };
 
 export function buildScoreDimensions(focusAreas: string[]): string[] {
@@ -90,6 +99,53 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
     return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
+function clampNonNegInt(n: unknown): number | undefined {
+    if (typeof n !== 'number' || Number.isNaN(n) || !Number.isFinite(n)) {
+        return undefined;
+    }
+    const r = Math.round(n);
+    return r < 0 ? 0 : r;
+}
+
+function parseBugsArray(raw: unknown): ReviewBugInput[] {
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+    const out: ReviewBugInput[] = [];
+    for (const item of raw) {
+        if (!isPlainObject(item)) {
+            continue;
+        }
+        const file = typeof item.file === 'string' ? item.file.trim() : '';
+        const description = typeof item.description === 'string' ? item.description.trim() : '';
+        if (!file || !description) {
+            continue;
+        }
+        let category = typeof item.category === 'string' ? item.category.trim().toLowerCase() : '';
+        if (!category) {
+            category = 'general';
+        }
+        const lineStart = clampNonNegInt(item.lineStart);
+        const lineEnd = clampNonNegInt(item.lineEnd);
+        if (lineStart !== undefined && lineEnd !== undefined && lineEnd < lineStart) {
+            continue;
+        }
+        const row: ReviewBugInput = {
+            category,
+            file,
+            description,
+        };
+        if (lineStart !== undefined) {
+            row.lineStart = lineStart;
+        }
+        if (lineEnd !== undefined) {
+            row.lineEnd = lineEnd;
+        }
+        out.push(row);
+    }
+    return out;
+}
+
 export function parseEnforcerPayload(obj: unknown): EnforcerPayload | null {
     if (!isPlainObject(obj)) {
         return null;
@@ -119,7 +175,9 @@ export function parseEnforcerPayload(obj: unknown): EnforcerPayload | null {
         blockers = obj.blockers.filter((b) => typeof b === 'string' && b.trim().length > 0).map((b) => b.trim());
     }
 
-    return { scores, notes, blockers };
+    const bugs = parseBugsArray(obj.bugs);
+
+    return { scores, notes, blockers, bugs };
 }
 
 export type MergeEvaluation = {
@@ -152,6 +210,50 @@ export function evaluateMergeReadiness(
 
     const mergeRecommended = reasons.length === 0;
     return { mergeRecommended, overall, reasons };
+}
+
+export function bugRowsForDb(
+    bugs: ReviewBugInput[],
+    repoFullName: string,
+    prNumber: number,
+): Array<{
+    repoFullName: string;
+    prNumber: number;
+    category: string;
+    filePath: string;
+    lineStart?: number;
+    lineEnd?: number;
+    linesAffected?: number;
+    description: string;
+}> {
+    return bugs.map((b) => {
+        const row: {
+            repoFullName: string;
+            prNumber: number;
+            category: string;
+            filePath: string;
+            lineStart?: number;
+            lineEnd?: number;
+            linesAffected?: number;
+            description: string;
+        } = {
+            repoFullName,
+            prNumber,
+            category: b.category,
+            filePath: b.file,
+            description: b.description,
+        };
+        if (b.lineStart !== undefined) {
+            row.lineStart = b.lineStart;
+        }
+        if (b.lineEnd !== undefined) {
+            row.lineEnd = b.lineEnd;
+        }
+        if (b.lineStart !== undefined && b.lineEnd !== undefined) {
+            row.linesAffected = b.lineEnd - b.lineStart + 1;
+        }
+        return row;
+    });
 }
 
 export type ParsedEnforcerResult = {
@@ -214,6 +316,9 @@ export function formatEnforcerGithubBody(options: {
     prose: string;
     reasons: string[];
     parseError: string | null;
+    diffFencedBody?: string;
+    diffWasTruncated?: boolean;
+    findingsRecorded?: number | null;
 }): string {
     const lines: string[] = [];
     lines.push('## Automated review (enforcer)');
@@ -264,10 +369,34 @@ export function formatEnforcerGithubBody(options: {
         lines.push('');
     }
 
+    const diffBody = options.diffFencedBody?.trim();
+    if (diffBody && diffBody.length > 0) {
+        lines.push('### Diff (truncated)');
+        lines.push('');
+        if (options.diffWasTruncated) {
+            lines.push('_The diff is truncated; open the PR **Files changed** tab for the full patch._');
+            lines.push('');
+        }
+        lines.push('```diff');
+        lines.push(diffBody);
+        lines.push('```');
+        lines.push('');
+    } else {
+        lines.push('### Diff (truncated)');
+        lines.push('');
+        lines.push('_No patch text was available from the GitHub API for this run._');
+        lines.push('');
+    }
+
     if (options.prose) {
         lines.push('### Review');
         lines.push('');
         lines.push(options.prose);
+    }
+
+    if (options.findingsRecorded != null) {
+        lines.push('');
+        lines.push(`_${options.findingsRecorded} finding(s) recorded for this PR._`);
     }
 
     return lines.join('\n');

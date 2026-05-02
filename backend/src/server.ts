@@ -7,13 +7,16 @@ import express from 'express';
 import { createAppAuth } from '@octokit/auth-app';
 import { Octokit } from 'octokit';
 import RepoConfig, { type IRepoConfig } from '../models/RepoConfig.js';
+import PrReviewFinding from '../models/PrReviewFinding.js';
 import mongoose from 'mongoose';
 import {
+    bugRowsForDb,
     buildScoreDimensions,
     evaluateMergeReadiness,
     formatEnforcerGithubBody,
     parseEnforcerResponse,
 } from './enforcer/parseEnforcerResponse.js';
+import { fetchPrDiffString } from './github/fetchPrDiff.js';
 
 dotenv.config();
 
@@ -125,22 +128,8 @@ function getEffectiveRepoConfig(repoConfig: RepoConfigSnapshot | null) {
     };
 }
 
-function normalizeDiffPayload(payload: unknown): string {
-    if (typeof payload === 'string') {
-        return payload.trim();
-    }
-
-    if (payload == null) {
-        return '';
-    }
-
-    try {
-        const serialized = JSON.stringify(payload, null, 2);
-        return serialized.trim();
-    } catch {
-        return String(payload).trim();
-    }
-}
+const DIFF_MAX_FOR_AI = 10_000;
+const DIFF_MAX_FOR_COMMENT = 8_000;
 
 app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), async (req, res) => {
     res.status(200).send('Webhook received');
@@ -159,6 +148,8 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
         const repoName = payload.repository?.name;
         const prNumber = payload.pull_request?.number;
         const repoFullName = payload.repository?.full_name || `${repoOwner}/${repoName}`;
+        const baseSha: string | undefined = payload.pull_request?.base?.sha;
+        const headSha: string | undefined = payload.pull_request?.head?.sha;
 
         if (!repoOwner || !repoName || !prNumber || !repoFullName) {
             throw new Error('missing required repository/PR fields in webhook payload');
@@ -184,22 +175,15 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
         const effectiveConfig = getEffectiveRepoConfig(config.toObject());
 
         console.log("Downloading code diffs from Github...");
-        const { data: prDiffPayload } = await octokit.rest.pulls.get({
-            owner: repoOwner,
-            repo: repoName,
-            pull_number: prNumber,
-            mediaType: {
-                format: "diff",
-            },
-        });
-
-        const normalizedDiff = normalizeDiffPayload(prDiffPayload);
-        const diffString = normalizedDiff.slice(0, 10_000);
+        const rawDiff = await fetchPrDiffString(octokit, repoOwner, repoName, prNumber, baseSha, headSha);
+        const diffString = rawDiff.slice(0, DIFF_MAX_FOR_AI);
         const hasDiff = diffString.length > 0;
         if (!hasDiff) {
             console.warn(`No diff content available for PR #${prNumber}; continuing with metadata-only review.`);
         }
-        
+
+        const diffForComment = rawDiff.slice(0, DIFF_MAX_FOR_COMMENT);
+        const diffCommentTruncated = rawDiff.length > DIFF_MAX_FOR_COMMENT;
         console.log(`Analyzing PR #${prNumber}: ${prTitle}`);
 
         const scoreDimensions = buildScoreDimensions(effectiveConfig.focusAreas);
@@ -223,6 +207,7 @@ After your narrative review, output exactly one JSON object in a fenced code blo
 - "scores": object whose keys are exactly these section names (lowercase): ${dimensionsList.split(', ').map((s) => `"${s}"`).join(', ')}. Each value is an integer from 0 to 100.
 - "notes": object with the same keys as "scores"; each value is one short line explaining that score.
 - "blockers": array of strings listing critical issues that must be fixed before merge; use [] if none.
+- "bugs": array of objects for concrete issues to store (use [] if none). Each object: "category" (e.g. security, bug, style, usability), "file" (repo-relative path), optional "lineStart" and "lineEnd" (1-based line numbers if known), "description" (short text).
 
 Do not put any text after the closing \`\`\` of that JSON block.
 
@@ -258,6 +243,20 @@ END_DIFF`;
             reasons = parseError ? [parseError] : ['Structured output missing.'];
         }
 
+        let findingsRecorded: number | null = null;
+        if (effectiveData && mongoUri && mongoose.connection.readyState === 1) {
+            try {
+                await PrReviewFinding.deleteMany({ repoFullName, prNumber });
+                if (effectiveData.bugs.length > 0) {
+                    await PrReviewFinding.insertMany(bugRowsForDb(effectiveData.bugs, repoFullName, prNumber));
+                }
+                findingsRecorded = effectiveData.bugs.length;
+            } catch (err) {
+                console.error('PrReviewFinding persist error:', err);
+                findingsRecorded = null;
+            }
+        }
+
         const commentBody = formatEnforcerGithubBody({
             enforcementLevel: effectiveConfig.enforcementLevel,
             mergeRecommended: Boolean(effectiveData && mergeRecommended),
@@ -267,6 +266,9 @@ END_DIFF`;
             prose: parsed.prose || aiReviewText.trim(),
             reasons,
             parseError,
+            diffFencedBody: diffForComment,
+            diffWasTruncated: diffCommentTruncated,
+            findingsRecorded,
         });
 
         await octokit.rest.issues.createComment({

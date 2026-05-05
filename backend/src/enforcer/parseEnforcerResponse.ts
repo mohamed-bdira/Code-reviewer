@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /** Minimum security score when a `security` dimension is present; below this, merge is not recommended. */
 export const SECURITY_VETO_THRESHOLD = 50;
 
@@ -212,6 +214,23 @@ export function evaluateMergeReadiness(
     return { mergeRecommended, overall, reasons };
 }
 
+/** Stable id for deduplicating the same logical finding across webhook/scheduled runs. */
+export function findingDedupeKey(args: {
+    repoFullName: string;
+    prNumber: number;
+    filePath: string;
+    lineStart?: number;
+    lineEnd?: number;
+    description: string;
+}): string {
+    const normPath = args.filePath.replace(/\\/g, '/').trim().toLowerCase();
+    const normDesc = args.description.replace(/\s+/g, ' ').trim().toLowerCase();
+    const lineA = args.lineStart !== undefined ? String(args.lineStart) : '';
+    const lineB = args.lineEnd !== undefined ? String(args.lineEnd) : '';
+    const payload = `${args.repoFullName}|${args.prNumber}|${normPath}|${lineA}|${lineB}|${normDesc}`;
+    return createHash('sha256').update(payload, 'utf8').digest('hex');
+}
+
 export function bugRowsForDb(
     bugs: ReviewBugInput[],
     repoFullName: string,
@@ -356,6 +375,20 @@ export function formatEnforcerGithubBody(options: {
             lines.push('**Blockers:**');
             for (const b of options.data.blockers) {
                 lines.push(`- ${b}`);
+            }
+            lines.push('');
+        }
+        if (options.data.bugs.length > 0) {
+            lines.push('### Recorded bugs (file / lines)');
+            lines.push('');
+            lines.push('| Category | File | Lines | Description |');
+            lines.push('| --- | --- | --- | --- |');
+            for (const b of options.data.bugs) {
+                const linesCol =
+                    b.lineStart !== undefined || b.lineEnd !== undefined
+                        ? `${b.lineStart ?? '—'}–${b.lineEnd ?? '—'}`
+                        : '—';
+                lines.push(`| ${escapeCell(b.category)} | ${escapeCell(b.file)} | ${escapeCell(linesCol)} | ${escapeCell(b.description)} |`);
             }
             lines.push('');
         }

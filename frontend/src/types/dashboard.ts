@@ -22,6 +22,7 @@ export type DashboardSummary = {
     reposConfigured: number;
     repos: {
         repoFullName: string;
+        installationId: string;
         focusAreas: string[];
         enforcementLevel: string;
         useAstGrep: boolean;
@@ -30,17 +31,19 @@ export type DashboardSummary = {
         createdAt?: string;
         updatedAt?: string;
     }[];
+    installations: {
+        id: string;
+        installationId: string;
+        accountLogin: string;
+        accountType: 'User' | 'Organization';
+        createdAt: string;
+    }[];
     githubWebhook: {
         method: string;
         path: string;
         event: string;
         actions: string[];
         postsPrComment: boolean;
-    };
-    githubAppCredentials: {
-        appIdConfigured: boolean;
-        installationIdConfigured: boolean;
-        pemPathRelative: string;
     };
     scheduledBugScan: ScheduledScanSnapshot;
     aiReview: {
@@ -51,8 +54,4 @@ export type DashboardSummary = {
         pipelineSteps: string[];
     };
     restEndpoints: { method: string; path: string; description: string }[];
-    repositoryExtras: {
-        githubActionsWorkflow: string;
-        description: string;
-    };
 };

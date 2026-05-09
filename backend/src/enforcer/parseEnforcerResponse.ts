@@ -326,7 +326,7 @@ function escapeCell(s: string): string {
     return s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
-export function formatEnforcerGithubBody(options: {
+export function formatEnforcerReviewSummary(options: {
     enforcementLevel: 'warning' | 'error';
     mergeRecommended: boolean;
     overall: number;
@@ -335,9 +335,9 @@ export function formatEnforcerGithubBody(options: {
     prose: string;
     reasons: string[];
     parseError: string | null;
-    diffFencedBody?: string;
-    diffWasTruncated?: boolean;
+    orphanBugs?: ReviewBugInput[];
     findingsRecorded?: number | null;
+    inlineCommentsPosted?: number;
 }): string {
     const lines: string[] = [];
     lines.push('## Automated review (enforcer)');
@@ -378,20 +378,6 @@ export function formatEnforcerGithubBody(options: {
             }
             lines.push('');
         }
-        if (options.data.bugs.length > 0) {
-            lines.push('### Recorded bugs (file / lines)');
-            lines.push('');
-            lines.push('| Category | File | Lines | Description |');
-            lines.push('| --- | --- | --- | --- |');
-            for (const b of options.data.bugs) {
-                const linesCol =
-                    b.lineStart !== undefined || b.lineEnd !== undefined
-                        ? `${b.lineStart ?? '—'}–${b.lineEnd ?? '—'}`
-                        : '—';
-                lines.push(`| ${escapeCell(b.category)} | ${escapeCell(b.file)} | ${escapeCell(linesCol)} | ${escapeCell(b.description)} |`);
-            }
-            lines.push('');
-        }
     }
 
     if (options.reasons.length > 0) {
@@ -402,22 +388,25 @@ export function formatEnforcerGithubBody(options: {
         lines.push('');
     }
 
-    const diffBody = options.diffFencedBody?.trim();
-    if (diffBody && diffBody.length > 0) {
-        lines.push('### Diff (truncated)');
+    if (options.inlineCommentsPosted != null && options.inlineCommentsPosted > 0) {
+        lines.push(`_${options.inlineCommentsPosted} inline finding(s) posted on the diff below._`);
         lines.push('');
-        if (options.diffWasTruncated) {
-            lines.push('_The diff is truncated; open the PR **Files changed** tab for the full patch._');
-            lines.push('');
+    }
+
+    if (options.orphanBugs && options.orphanBugs.length > 0) {
+        lines.push('### Findings without a diff anchor');
+        lines.push('');
+        lines.push('_These bugs lack a line that exists in the current diff hunks; review the file directly._');
+        lines.push('');
+        lines.push('| Category | File | Lines | Description |');
+        lines.push('| --- | --- | --- | --- |');
+        for (const b of options.orphanBugs) {
+            const linesCol =
+                b.lineStart !== undefined || b.lineEnd !== undefined
+                    ? `${b.lineStart ?? '—'}–${b.lineEnd ?? '—'}`
+                    : '—';
+            lines.push(`| ${escapeCell(b.category)} | ${escapeCell(b.file)} | ${escapeCell(linesCol)} | ${escapeCell(b.description)} |`);
         }
-        lines.push('```diff');
-        lines.push(diffBody);
-        lines.push('```');
-        lines.push('');
-    } else {
-        lines.push('### Diff (truncated)');
-        lines.push('');
-        lines.push('_No patch text was available from the GitHub API for this run._');
         lines.push('');
     }
 

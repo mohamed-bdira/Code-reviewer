@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IPrReviewFinding extends Document {
     dedupeKey?: string;
+    userId?: import('mongoose').Types.ObjectId;
     repoFullName: string;
     prNumber: number;
     category: string;
@@ -17,6 +18,7 @@ export interface IPrReviewFinding extends Document {
 const PrReviewFindingSchema = new Schema<IPrReviewFinding>(
     {
         dedupeKey: { type: String, required: false },
+        userId: { type: Schema.Types.ObjectId, ref: 'User', required: false, index: true },
         repoFullName: { type: String, required: true },
         prNumber: { type: Number, required: true },
         category: { type: String, required: true },
@@ -34,7 +36,7 @@ const PrReviewFindingSchema = new Schema<IPrReviewFinding>(
 );
 
 PrReviewFindingSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
-PrReviewFindingSchema.index({ repoFullName: 1, prNumber: 1, lastSeenAt: -1 });
+PrReviewFindingSchema.index({ userId: 1, repoFullName: 1, prNumber: 1, lastSeenAt: -1 });
 PrReviewFindingSchema.index({ category: 1 });
 
 export default mongoose.model<IPrReviewFinding>('PrReviewFinding', PrReviewFindingSchema);

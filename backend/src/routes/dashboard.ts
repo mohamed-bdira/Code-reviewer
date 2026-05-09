@@ -1,11 +1,14 @@
 import type { Express, Request, Response } from 'express';
-import mongoose from 'mongoose';
+import mongoose, { Types } from 'mongoose';
+import Installation from '../../models/Installation.js';
 import PrReviewFinding from '../../models/PrReviewFinding.js';
 import RepoConfig from '../../models/RepoConfig.js';
+import { requireAuth } from '../auth/middleware.js';
 import { readScheduledScanEnv } from '../scheduler/bugScan.js';
 
 type RepoRow = {
     repoFullName: string;
+    installationId: string;
     focusAreas: string[];
     enforcementLevel: string;
     useAstGrep: boolean;
@@ -13,6 +16,14 @@ type RepoRow = {
     mergeMinScore: number;
     createdAt?: string;
     updatedAt?: string;
+};
+
+type InstallationRow = {
+    id: string;
+    installationId: string;
+    accountLogin: string;
+    accountType: 'User' | 'Organization';
+    createdAt: string;
 };
 
 export type DashboardSummary = {
@@ -29,17 +40,13 @@ export type DashboardSummary = {
     };
     reposConfigured: number;
     repos: RepoRow[];
+    installations: InstallationRow[];
     githubWebhook: {
         method: string;
         path: string;
         event: string;
         actions: string[];
         postsPrComment: boolean;
-    };
-    githubAppCredentials: {
-        appIdConfigured: boolean;
-        installationIdConfigured: boolean;
-        pemPathRelative: string;
     };
     scheduledBugScan: ReturnType<typeof readScheduledScanEnv>;
     aiReview: {
@@ -50,13 +57,9 @@ export type DashboardSummary = {
         pipelineSteps: string[];
     };
     restEndpoints: { method: string; path: string; description: string }[];
-    repositoryExtras: {
-        githubActionsWorkflow: string;
-        description: string;
-    };
 };
 
-async function aggregateFindingStats(): Promise<{
+async function aggregateFindingStats(userId: string): Promise<{
     totalStored: number | null;
     topCategories: { category: string; count: number }[];
 }> {
@@ -64,10 +67,12 @@ async function aggregateFindingStats(): Promise<{
         return { totalStored: null, topCategories: [] };
     }
     try {
+        const userObjectId = new Types.ObjectId(userId);
         const agg = await PrReviewFinding.aggregate<{
             total: { n: number }[];
             cats: { _id: string; count: number }[];
         }>([
+            { $match: { userId: userObjectId } },
             {
                 $facet: {
                     total: [{ $count: 'n' }],
@@ -88,19 +93,26 @@ async function aggregateFindingStats(): Promise<{
 }
 
 export function registerDashboardRoutes(app: Express): void {
-    app.get('/api/dashboard/summary', async (_req: Request, res: Response) => {
+    app.get('/api/dashboard/summary', requireAuth, async (req: Request, res: Response) => {
         const port = Number(process.env.PORT ?? 3001);
+        const userId = req.user!._id;
+        const userObjectId = new Types.ObjectId(userId);
         let repos: RepoRow[] = [];
         let reposConfigured = 0;
+        let installations: InstallationRow[] = [];
 
         try {
             if (mongoose.connection.readyState === 1) {
-                const docs = await RepoConfig.find().sort({ repoFullName: 1 }).lean().exec();
-                reposConfigured = docs.length;
-                repos = docs.map((doc) => {
+                const [repoDocs, installDocs] = await Promise.all([
+                    RepoConfig.find({ userId: userObjectId }).sort({ repoFullName: 1 }).lean().exec(),
+                    Installation.find({ userId: userObjectId }).sort({ accountLogin: 1 }).lean().exec(),
+                ]);
+                reposConfigured = repoDocs.length;
+                repos = repoDocs.map((doc) => {
                     const d = doc as unknown as Record<string, unknown>;
                     const row: RepoRow = {
                         repoFullName: String(doc.repoFullName),
+                        installationId: String(doc.installationId ?? ''),
                         focusAreas: [...(doc.focusAreas ?? [])],
                         enforcementLevel: String(doc.enforcementLevel ?? 'warning'),
                         useAstGrep: Boolean(doc.useAstGrep),
@@ -115,12 +127,23 @@ export function registerDashboardRoutes(app: Express): void {
                     }
                     return row;
                 });
+                installations = installDocs.map((doc) => {
+                    const d = doc as unknown as Record<string, unknown>;
+                    return {
+                        id: String(doc._id),
+                        installationId: String(doc.installationId),
+                        accountLogin: String(doc.accountLogin),
+                        accountType: doc.accountType === 'Organization' ? 'Organization' : 'User',
+                        createdAt: d.createdAt instanceof Date ? d.createdAt.toISOString() : new Date().toISOString(),
+                    };
+                });
             }
         } catch {
             repos = [];
+            installations = [];
         }
 
-        const findingStats = await aggregateFindingStats();
+        const findingStats = await aggregateFindingStats(userId);
 
         const summary: DashboardSummary = {
             generatedAt: new Date().toISOString(),
@@ -133,17 +156,13 @@ export function registerDashboardRoutes(app: Express): void {
             findings: findingStats,
             reposConfigured,
             repos,
+            installations,
             githubWebhook: {
                 method: 'POST',
                 path: '/api/webhooks/github',
                 event: 'pull_request',
                 actions: ['opened', 'synchronize'],
                 postsPrComment: true,
-            },
-            githubAppCredentials: {
-                appIdConfigured: Boolean(process.env.GITHUB_APP_ID?.trim()),
-                installationIdConfigured: Boolean(process.env.GITHUB_INSTALLATION_ID?.trim()),
-                pemPathRelative: 'PFE/github-app-key.pem',
             },
             scheduledBugScan: readScheduledScanEnv(),
             aiReview: {
@@ -153,13 +172,14 @@ export function registerDashboardRoutes(app: Express): void {
                 noCookieTokenAuthNote:
                     'pythonExploit.py posts to the Gemini web endpoint using only minimal static HTTP headers — no Cookie, Authorization Bearer, or custom API token headers.',
                 pipelineSteps: [
-                    'Webhook or scheduler triggers reviewPullRequest',
-                    'Octokit loads PR diff via fetchPrDiffString (multiple GitHub REST fallbacks)',
-                    'Senior-engineer prompt: scores, notes, blockers, concrete bugs[] with optional line ranges',
+                    'Webhook lookup -> Installation -> userId -> RepoConfig (auto-create defaults)',
+                    'reviewPullRequest fetches PR diff via fetchPrDiffString (multiple GitHub REST fallbacks)',
+                    'Senior-engineer prompt: scores, notes, blockers, concrete bugs[] with line anchors in the diff',
                     'pythonExploit streams JSON { prompt, diff } to Gemini and returns review text',
                     'parseEnforcerResponse extracts fenced JSON plus prose; merge thresholds + SECURITY_VETO',
-                    'formatEnforcerGithubBody posts scores, blockers, diff excerpt, prose, bug table (category / file / lines / description), recorded count',
-                    'upsertPrReviewFindings persists each bug by SHA-256 dedupeKey with firstSeenAt / lastSeenAt',
+                    'parseDiffHunks + bugsToReviewComments split bugs into inline review comments and orphan bullets',
+                    'octokit.rest.pulls.createReview posts ONE review with summary body + inline line comments anchored to the diff',
+                    'upsertPrReviewFindings persists each bug by SHA-256 dedupeKey + emits SSE events to the owning user',
                 ],
             },
             restEndpoints: [
@@ -171,12 +191,11 @@ export function registerDashboardRoutes(app: Express): void {
                     path: '/api/dashboard/summary',
                     description: 'Runtime + config snapshot for dashboards (this response)',
                 },
+                { method: 'GET', path: '/api/events', description: 'SSE stream of finding/config/installation events' },
+                { method: 'GET', path: '/api/repo-configs', description: 'List the current user repo configurations' },
+                { method: 'GET', path: '/api/installations', description: 'List the current user GitHub App installations' },
+                { method: 'GET', path: '/api/keys', description: 'List the current user API keys' },
             ],
-            repositoryExtras: {
-                githubActionsWorkflow: '.github/workflows/ai-review.yml',
-                description:
-                    'Separate CI path runs .github/scripts/review.js via actions/github-script (Node) on pull_request opened/synchronize — independent from the Atlas/Mongo webhook service.',
-            },
         };
 
         res.json(summary);

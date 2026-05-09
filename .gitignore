@@ -1,0 +1,9 @@
+# Never commit or push: local script, GitHub App key, env secrets
+pythonExploit.py
+github-app-key.pem
+.env
+
+# Build / cache artifacts
+node_modules/
+__pycache__/
+*.pyc

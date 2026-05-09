@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchCategoryCounts, fetchFindings, type FindingFilters } from '../api/findings';
 import type { CategoryCountsResponse, FindingsListResponse, PrReviewFinding } from '../types/findings';
 import { formatIso } from './formatters';
+import type { ServerEvent } from './useEventStream';
 
 const DEFAULT_LIMIT = 25;
 
@@ -43,10 +44,11 @@ function formatLines(f: PrReviewFinding): string {
     return '—';
 }
 
-export default function FindingsPanel() {
+export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent | null } = {}) {
     const [form, setForm] = useState<AppliedFilterFields>(emptyFindingsFilters());
     const [applied, setApplied] = useState<AppliedFilterFields>(emptyFindingsFilters());
     const [skip, setSkip] = useState(0);
+    const [refreshTick, setRefreshTick] = useState(0);
 
     const [list, setList] = useState<FindingsListResponse | null>(null);
     const [counts, setCounts] = useState<CategoryCountsResponse | null>(null);
@@ -72,7 +74,7 @@ export default function FindingsPanel() {
                 }
             } catch (e) {
                 if (!cancelled) {
-                    setError(e instanceof Error ? e.message : 'Request failed');
+                    setError(extractMessage(e));
                     setList(null);
                     setCounts(null);
                 }
@@ -84,7 +86,14 @@ export default function FindingsPanel() {
         return () => {
             cancelled = true;
         };
-    }, [filters]);
+    }, [filters, refreshTick]);
+
+    useEffect(() => {
+        if (!lastEvent) return;
+        if (lastEvent.type === 'finding-created' || lastEvent.type === 'finding-updated') {
+            setRefreshTick((t) => t + 1);
+        }
+    }, [lastEvent]);
 
     const total = list?.total ?? 0;
     const limit = list?.limit ?? DEFAULT_LIMIT;
@@ -100,6 +109,15 @@ export default function FindingsPanel() {
     const orderedCategories = counts
         ? Object.entries(counts.counts).sort((a, b) => b[1] - a[1])
         : [];
+
+    function extractMessage(err: unknown): string {
+        if (typeof err === 'object' && err !== null && 'message' in err) {
+            const m = (err as { message?: unknown }).message;
+            if (typeof m === 'string') return m;
+        }
+        if (err instanceof Error) return err.message;
+        return 'Request failed';
+    }
 
     return (
         <div className="space-y-8">

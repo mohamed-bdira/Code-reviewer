@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from 'express';
-import mongoose from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import PrReviewFinding from '../../models/PrReviewFinding.js';
+import { requireAuth } from '../auth/middleware.js';
 
 type ParsedQuery = {
     repoFullName?: string;
@@ -87,8 +88,10 @@ function parseFilters(req: Request): ParsedQuery | { error: string } {
     return parsed;
 }
 
-function buildMatch(q: ParsedQuery): Record<string, unknown> {
-    const match: Record<string, unknown> = {};
+function buildMatch(q: ParsedQuery, userId: string): Record<string, unknown> {
+    const match: Record<string, unknown> = {
+        userId: new Types.ObjectId(userId),
+    };
     if (q.repoFullName) {
         match.repoFullName = q.repoFullName;
     }
@@ -111,7 +114,7 @@ function buildMatch(q: ParsedQuery): Record<string, unknown> {
 }
 
 export function registerFindingsRoutes(app: Express): void {
-    app.get('/api/findings', async (req: Request, res: Response) => {
+    app.get('/api/findings', requireAuth, async (req: Request, res: Response) => {
         if (mongoose.connection.readyState !== 1) {
             res.status(503).json({ error: 'MongoDB not connected' });
             return;
@@ -121,7 +124,7 @@ export function registerFindingsRoutes(app: Express): void {
             res.status(400).json({ error: parsed.error });
             return;
         }
-        const match = buildMatch(parsed);
+        const match = buildMatch(parsed, req.user!._id);
         try {
             const [items, total] = await Promise.all([
                 PrReviewFinding.find(match)
@@ -144,7 +147,7 @@ export function registerFindingsRoutes(app: Express): void {
         }
     });
 
-    app.get('/api/findings/by-category', async (req: Request, res: Response) => {
+    app.get('/api/findings/by-category', requireAuth, async (req: Request, res: Response) => {
         if (mongoose.connection.readyState !== 1) {
             res.status(503).json({ error: 'MongoDB not connected' });
             return;
@@ -154,7 +157,7 @@ export function registerFindingsRoutes(app: Express): void {
             res.status(400).json({ error: parsed.error });
             return;
         }
-        const match = buildMatch(parsed);
+        const match = buildMatch(parsed, req.user!._id);
         try {
             const agg = await PrReviewFinding.aggregate<{ _id: string; count: number }>([
                 { $match: match },

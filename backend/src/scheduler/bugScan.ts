@@ -1,8 +1,10 @@
 import mongoose from 'mongoose';
-import type { Octokit } from 'octokit';
+import Installation from '../../models/Installation.js';
 import RepoConfig from '../../models/RepoConfig.js';
 import { reviewPullRequest } from '../review/reviewPullRequest.js';
 import { getEffectiveRepoConfig } from '../review/effectiveRepoConfig.js';
+import { userHasActiveApiKey } from '../auth/apiKeys.js';
+import { getInstallationOctokit } from '../github/octokit.js';
 
 export type ScheduledScanEnvSnapshot = {
     enabled: boolean;
@@ -36,7 +38,7 @@ function splitRepoFullName(repoFullName: string): { owner: string; repo: string 
     };
 }
 
-export function startBugScanScheduler(deps: { octokit: Octokit; mongoUri: string | undefined }): () => void {
+export function startBugScanScheduler(deps: { mongoUri: string | undefined }): () => void {
     const snap = readScheduledScanEnv();
     if (!snap.enabled) {
         return () => {};
@@ -57,69 +59,99 @@ export function startBugScanScheduler(deps: { octokit: Octokit; mongoUri: string
             return;
         }
 
-        let configs;
+        let installations;
         try {
-            configs = await RepoConfig.find().exec();
+            installations = await Installation.find().exec();
         } catch (e) {
-            console.error('[bug-scan] RepoConfig fetch failed:', e);
+            console.error('[bug-scan] Installation fetch failed:', e);
             return;
         }
 
-        for (const cfg of configs) {
-            const repoFullName = cfg.repoFullName;
-            const parts = splitRepoFullName(repoFullName);
-            if (!parts) {
-                console.warn(`[bug-scan] Invalid repoFullName "${repoFullName}", skipping`);
-                continue;
+        for (const install of installations) {
+            const installationId = install.installationId;
+            const userId = String(install.userId);
+            if (process.env.REQUIRE_API_KEY_FOR_REVIEWS === 'true') {
+                const hasKey = await userHasActiveApiKey(userId);
+                if (!hasKey) {
+                    continue;
+                }
             }
-            const { owner, repo } = parts;
-
-            let pulls;
+            let octokit;
             try {
-                const { data } = await deps.octokit.rest.pulls.list({
-                    owner,
-                    repo,
-                    state: 'open',
-                    per_page: maxPrs,
-                });
-                pulls = data;
+                octokit = getInstallationOctokit(installationId);
             } catch (e) {
-                console.error(`[bug-scan] pulls.list failed for ${repoFullName}:`, e);
+                console.error(`[bug-scan] octokit init failed for installation ${installationId}:`, e);
                 continue;
             }
 
-            const effectiveConfig = getEffectiveRepoConfig(cfg.toObject());
+            let configs;
+            try {
+                configs = await RepoConfig.find({ userId: install.userId }).exec();
+            } catch (e) {
+                console.error(`[bug-scan] RepoConfig fetch failed for user ${userId}:`, e);
+                continue;
+            }
 
-            for (const pr of pulls.slice(0, maxPrs)) {
-                const prNumber = pr.number;
-                const key = `${repoFullName}#${prNumber}`;
-                const headSha = pr.head?.sha ?? '';
-                if (skipUnchanged && headSha && lastHeadByPr.get(key) === headSha) {
+            for (const cfg of configs) {
+                if (cfg.installationId !== installationId) {
+                    continue;
+                }
+                const repoFullName = cfg.repoFullName;
+                const parts = splitRepoFullName(repoFullName);
+                if (!parts) {
+                    console.warn(`[bug-scan] Invalid repoFullName "${repoFullName}", skipping`);
+                    continue;
+                }
+                const { owner, repo } = parts;
+
+                let pulls;
+                try {
+                    const { data } = await octokit.rest.pulls.list({
+                        owner,
+                        repo,
+                        state: 'open',
+                        per_page: maxPrs,
+                    });
+                    pulls = data;
+                } catch (e) {
+                    console.error(`[bug-scan] pulls.list failed for ${repoFullName}:`, e);
                     continue;
                 }
 
-                try {
-                    await reviewPullRequest({
-                        octokit: deps.octokit,
-                        repoOwner: owner,
-                        repoName: repo,
-                        repoFullName,
-                        prNumber,
-                        prTitle: pr.title || 'No title.',
-                        prDescription: pr.body || 'No description.',
-                        ...(pr.base?.sha !== undefined ? { baseSha: pr.base.sha } : {}),
-                        ...(pr.head?.sha !== undefined ? { headSha: pr.head.sha } : {}),
-                        effectiveConfig,
-                        postComment: postComments,
-                        ...(deps.mongoUri !== undefined ? { mongoUri: deps.mongoUri } : {}),
-                    });
+                const effectiveConfig = getEffectiveRepoConfig(cfg.toObject());
 
-                    if (headSha) {
-                        lastHeadByPr.set(key, headSha);
+                for (const pr of pulls.slice(0, maxPrs)) {
+                    const prNumber = pr.number;
+                    const key = `${repoFullName}#${prNumber}`;
+                    const headSha = pr.head?.sha ?? '';
+                    if (skipUnchanged && headSha && lastHeadByPr.get(key) === headSha) {
+                        continue;
                     }
-                    console.log(`[bug-scan] Finished ${repoFullName}#${prNumber}`);
-                } catch (e) {
-                    console.error(`[bug-scan] review failed ${repoFullName}#${prNumber}:`, e);
+
+                    try {
+                        await reviewPullRequest({
+                            octokit,
+                            repoOwner: owner,
+                            repoName: repo,
+                            repoFullName,
+                            prNumber,
+                            prTitle: pr.title || 'No title.',
+                            prDescription: pr.body || 'No description.',
+                            ...(pr.base?.sha !== undefined ? { baseSha: pr.base.sha } : {}),
+                            ...(pr.head?.sha !== undefined ? { headSha: pr.head.sha } : {}),
+                            effectiveConfig,
+                            postComment: postComments,
+                            ...(deps.mongoUri !== undefined ? { mongoUri: deps.mongoUri } : {}),
+                            userId,
+                        });
+
+                        if (headSha) {
+                            lastHeadByPr.set(key, headSha);
+                        }
+                        console.log(`[bug-scan] Finished ${repoFullName}#${prNumber} (user ${userId})`);
+                    } catch (e) {
+                        console.error(`[bug-scan] review failed ${repoFullName}#${prNumber}:`, e);
+                    }
                 }
             }
         }

@@ -1,6 +1,5 @@
 import type { CategoryCountsResponse, FindingsListResponse } from '../types/findings';
-
-const BASE = () => import.meta.env.VITE_API_BASE_URL ?? '';
+import { apiFetch } from '../auth/apiFetch';
 
 export type FindingFilters = {
     repoFullName?: string;
@@ -27,20 +26,11 @@ function buildQuery(f: FindingFilters): string {
     return s ? `?${s}` : '';
 }
 
-async function getJson<T>(path: string): Promise<T> {
-    const res = await fetch(`${BASE()}${path}`);
-    const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-    if (!res.ok) {
-        throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
-    }
-    return data as T;
-}
-
 export function fetchFindings(filters: FindingFilters): Promise<FindingsListResponse> {
-    return getJson<FindingsListResponse>(`/api/findings${buildQuery(filters)}`);
+    return apiFetch<FindingsListResponse>(`/api/findings${buildQuery(filters)}`);
 }
 
 export function fetchCategoryCounts(filters: FindingFilters): Promise<CategoryCountsResponse> {
     const { skip: _s, limit: _l, ...rest } = filters;
-    return getJson<CategoryCountsResponse>(`/api/findings/by-category${buildQuery(rest)}`);
+    return apiFetch<CategoryCountsResponse>(`/api/findings/by-category${buildQuery(rest)}`);
 }

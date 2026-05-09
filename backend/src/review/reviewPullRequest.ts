@@ -3,18 +3,19 @@ import type { Octokit } from 'octokit';
 import {
     buildScoreDimensions,
     evaluateMergeReadiness,
-    formatEnforcerGithubBody,
+    formatEnforcerReviewSummary,
     parseEnforcerResponse,
     type EnforcerPayload,
     type ParsedEnforcerResult,
+    type ReviewBugInput,
 } from '../enforcer/parseEnforcerResponse.js';
 import { upsertPrReviewFindings } from '../findings/upsertPrReviewFindings.js';
 import { fetchPrDiffString } from '../github/fetchPrDiff.js';
+import { bugsToReviewComments, parseDiffHunks, type InlineReviewComment } from '../github/diffHunks.js';
 import type { EffectiveRepoConfig } from './effectiveRepoConfig.js';
 import { runPythonReview } from './pythonReview.js';
 
 const DIFF_MAX_FOR_AI = 10_000;
-const DIFF_MAX_FOR_COMMENT = 8_000;
 
 export type ReviewPullRequestArgs = {
     octokit: Octokit;
@@ -29,6 +30,7 @@ export type ReviewPullRequestArgs = {
     effectiveConfig: EffectiveRepoConfig;
     postComment: boolean;
     mongoUri?: string;
+    userId?: string;
 };
 
 export type ReviewPullRequestResult = {
@@ -39,8 +41,8 @@ export type ReviewPullRequestResult = {
     parsed: ParsedEnforcerResult;
     aiReviewText: string;
     findingsRecorded: number | null;
-    diffForComment: string;
-    diffCommentTruncated: boolean;
+    inlineComments: InlineReviewComment[];
+    orphanBugs: ReviewBugInput[];
 };
 
 export async function reviewPullRequest(args: ReviewPullRequestArgs): Promise<ReviewPullRequestResult> {
@@ -57,6 +59,7 @@ export async function reviewPullRequest(args: ReviewPullRequestArgs): Promise<Re
         effectiveConfig,
         postComment,
         mongoUri,
+        userId,
     } = args;
 
     console.log(`Downloading code diffs from Github (${repoFullName}#${prNumber})...`);
@@ -67,8 +70,6 @@ export async function reviewPullRequest(args: ReviewPullRequestArgs): Promise<Re
         console.warn(`No diff content available for PR #${prNumber}; continuing with metadata-only review.`);
     }
 
-    const diffForComment = rawDiff.slice(0, DIFF_MAX_FOR_COMMENT);
-    const diffCommentTruncated = rawDiff.length > DIFF_MAX_FOR_COMMENT;
     console.log(`Analyzing PR #${prNumber}: ${prTitle}`);
 
     const scoreDimensions = buildScoreDimensions(effectiveConfig.focusAreas);
@@ -86,13 +87,13 @@ Use ast-grep signal: ${effectiveConfig.useAstGrep ? 'yes' : 'no'}
 Additional repository rules: ${effectiveConfig.customRules}
 Diff status: ${hasDiff ? 'available (truncated to 10k chars if needed)' : 'missing'}
 
-Provide a detailed, actionable review (architecture, edge cases, security, tone professional). Prioritize findings from the code diff.
+Provide a detailed, actionable review (architecture, edge cases, security, tone professional). Prioritize findings from the code diff. Do NOT quote the diff back at me — your output is rendered next to the diff in GitHub's PR view.
 
 After your narrative review, output exactly one JSON object in a fenced code block with language tag json. Use these keys:
 - "scores": object whose keys are exactly these section names (lowercase): ${dimensionsList.split(', ').map((s) => `"${s}"`).join(', ')}. Each value is an integer from 0 to 100.
 - "notes": object with the same keys as "scores"; each value is one short line explaining that score.
 - "blockers": array of strings listing critical issues that must be fixed before merge; use [] if none.
-- "bugs": array of objects for concrete issues to store (use [] if none). Each object: "category" (e.g. security, bug, style, usability), "file" (repo-relative path), optional "lineStart" and "lineEnd" (1-based line numbers if known), "description" (short text).
+- "bugs": array of objects for concrete issues to store (use [] if none). Each object: "category" (e.g. security, bug, style, usability), "file" (repo-relative path matching the diff's b/<path>), "lineStart" and "lineEnd" (1-based line numbers, REQUIRED for inline rendering on the PR diff — pick lines that actually appear in the supplied diff hunks on the new revision side; multi-line spans use lineEnd > lineStart, single-line uses lineStart === lineEnd or omit lineEnd), "description" (short text). Bugs without anchorable lines will be downgraded to a footnote.
 
 Do not put any text after the closing \`\`\` of that JSON block.
 
@@ -132,7 +133,7 @@ END_DIFF`;
     if (effectiveData && mongoUri && mongoose.connection.readyState === 1) {
         try {
             if (effectiveData.bugs.length > 0) {
-                await upsertPrReviewFindings(repoFullName, prNumber, effectiveData.bugs);
+                await upsertPrReviewFindings(repoFullName, prNumber, effectiveData.bugs, userId);
             }
             findingsRecorded = effectiveData.bugs.length;
         } catch (err) {
@@ -141,7 +142,13 @@ END_DIFF`;
         }
     }
 
-    const commentBody = formatEnforcerGithubBody({
+    const hunks = parseDiffHunks(rawDiff);
+    const { inline: inlineComments, orphans: orphanBugs } = bugsToReviewComments(
+        effectiveData?.bugs ?? [],
+        hunks,
+    );
+
+    const body = formatEnforcerReviewSummary({
         enforcementLevel: effectiveConfig.enforcementLevel,
         mergeRecommended: Boolean(effectiveData && mergeRecommended),
         overall,
@@ -150,19 +157,34 @@ END_DIFF`;
         prose: parsed.prose || aiReviewText.trim(),
         reasons,
         parseError,
-        diffFencedBody: diffForComment,
-        diffWasTruncated: diffCommentTruncated,
+        orphanBugs,
+        inlineCommentsPosted: inlineComments.length,
         findingsRecorded,
     });
 
     if (postComment) {
-        await octokit.rest.issues.createComment({
-            owner: repoOwner,
-            repo: repoName,
-            issue_number: prNumber,
-            body: commentBody,
-        });
-        console.log('Review posted to GitHub.');
+        try {
+            await octokit.rest.pulls.createReview({
+                owner: repoOwner,
+                repo: repoName,
+                pull_number: prNumber,
+                ...(headSha ? { commit_id: headSha } : {}),
+                event: 'COMMENT',
+                body,
+                comments: inlineComments,
+            });
+            console.log(
+                `Review posted to GitHub (${inlineComments.length} inline, ${orphanBugs.length} orphan).`,
+            );
+        } catch (err) {
+            console.error('pulls.createReview failed; falling back to issue comment:', err);
+            await octokit.rest.issues.createComment({
+                owner: repoOwner,
+                repo: repoName,
+                issue_number: prNumber,
+                body,
+            });
+        }
     }
 
     return {
@@ -173,7 +195,7 @@ END_DIFF`;
         parsed,
         aiReviewText,
         findingsRecorded,
-        diffForComment,
-        diffCommentTruncated,
+        inlineComments,
+        orphanBugs,
     };
 }

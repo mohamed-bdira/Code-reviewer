@@ -4,6 +4,27 @@ import RepoConfig from '../../models/RepoConfig.js';
 import { reviewPullRequest } from '../review/reviewPullRequest.js';
 import { getEffectiveRepoConfig } from '../review/effectiveRepoConfig.js';
 
+export type ScheduledScanEnvSnapshot = {
+    enabled: boolean;
+    intervalMinutes: number;
+    maxPrsPerRepo: number;
+    postComments: boolean;
+    skipUnchanged: boolean;
+    runOnStart: boolean;
+};
+
+/** Parses the same env vars used by {@link startBugScanScheduler}. */
+export function readScheduledScanEnv(): ScheduledScanEnvSnapshot {
+    return {
+        enabled: process.env.ENABLE_BUG_SCAN === 'true',
+        intervalMinutes: Math.max(1, Number(process.env.BUG_SCAN_INTERVAL_MINUTES ?? 60) || 60),
+        maxPrsPerRepo: Math.max(1, Number(process.env.BUG_SCAN_MAX_PRS_PER_REPO ?? 10) || 10),
+        postComments: process.env.BUG_SCAN_POST_COMMENTS === 'true',
+        skipUnchanged: process.env.BUG_SCAN_SKIP_UNCHANGED !== 'false',
+        runOnStart: process.env.BUG_SCAN_RUN_ON_START === 'true',
+    };
+}
+
 function splitRepoFullName(repoFullName: string): { owner: string; repo: string } | null {
     const i = repoFullName.indexOf('/');
     if (i <= 0 || i === repoFullName.length - 1) {
@@ -16,14 +37,15 @@ function splitRepoFullName(repoFullName: string): { owner: string; repo: string 
 }
 
 export function startBugScanScheduler(deps: { octokit: Octokit; mongoUri: string | undefined }): () => void {
-    if (process.env.ENABLE_BUG_SCAN !== 'true') {
+    const snap = readScheduledScanEnv();
+    if (!snap.enabled) {
         return () => {};
     }
 
-    const minutes = Math.max(1, Number(process.env.BUG_SCAN_INTERVAL_MINUTES ?? 60) || 60);
-    const maxPrs = Math.max(1, Number(process.env.BUG_SCAN_MAX_PRS_PER_REPO ?? 10) || 10);
-    const postComments = process.env.BUG_SCAN_POST_COMMENTS === 'true';
-    const skipUnchanged = process.env.BUG_SCAN_SKIP_UNCHANGED !== 'false';
+    const minutes = snap.intervalMinutes;
+    const maxPrs = snap.maxPrsPerRepo;
+    const postComments = snap.postComments;
+    const skipUnchanged = snap.skipUnchanged;
 
     const lastHeadByPr = new Map<string, string>();
 
@@ -105,7 +127,7 @@ export function startBugScanScheduler(deps: { octokit: Octokit; mongoUri: string
 
     console.log(`[bug-scan] Enabled every ${minutes} min, max ${maxPrs} PRs/repo, postComments=${postComments}`);
 
-    if (process.env.BUG_SCAN_RUN_ON_START === 'true') {
+    if (snap.runOnStart) {
         void tick();
     }
 

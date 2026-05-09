@@ -10,6 +10,7 @@ import mongoose from 'mongoose';
 import RepoConfig from '../models/RepoConfig.js';
 import { getEffectiveRepoConfig } from './review/effectiveRepoConfig.js';
 import { reviewPullRequest } from './review/reviewPullRequest.js';
+import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerFindingsRoutes } from './routes/findings.js';
 import { startBugScanScheduler } from './scheduler/bugScan.js';
 
@@ -102,6 +103,7 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
 });
 
 app.use(cors());
+registerDashboardRoutes(app);
 registerFindingsRoutes(app);
 
 let stopBugScan: (() => void) | undefined;

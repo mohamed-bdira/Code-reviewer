@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from 'express';
-import mongoose, { Types } from 'mongoose';
+import mongoose from 'mongoose';
 import PrReviewFinding from '../../models/PrReviewFinding.js';
+import { matchFindingsVisibleToUser } from '../findings/findingVisibility.js';
 import { requireAuth } from '../auth/middleware.js';
 
 type ParsedQuery = {
@@ -88,29 +89,31 @@ function parseFilters(req: Request): ParsedQuery | { error: string } {
     return parsed;
 }
 
-function buildMatch(q: ParsedQuery, userId: string): Record<string, unknown> {
-    const match: Record<string, unknown> = {
-        userId: new Types.ObjectId(userId),
-    };
+async function buildMatch(q: ParsedQuery, userId: string): Promise<Record<string, unknown>> {
+    const visibility = await matchFindingsVisibleToUser(userId);
+    const filters: Record<string, unknown> = {};
     if (q.repoFullName) {
-        match.repoFullName = q.repoFullName;
+        filters.repoFullName = q.repoFullName;
     }
     if (q.prNumber !== undefined) {
-        match.prNumber = q.prNumber;
+        filters.prNumber = q.prNumber;
     }
     if (q.category) {
-        match.category = q.category;
+        filters.category = q.category;
     }
     if (q.fileContains) {
-        match.filePath = new RegExp(q.fileContains.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        filters.filePath = new RegExp(q.fileContains.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     }
     if (q.q) {
-        match.description = new RegExp(q.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        filters.description = new RegExp(q.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     }
     if (q.since) {
-        match.firstSeenAt = { $gte: q.since };
+        filters.firstSeenAt = { $gte: q.since };
     }
-    return match;
+    if (Object.keys(filters).length === 0) {
+        return visibility;
+    }
+    return { $and: [visibility, filters] };
 }
 
 export function registerFindingsRoutes(app: Express): void {
@@ -124,7 +127,7 @@ export function registerFindingsRoutes(app: Express): void {
             res.status(400).json({ error: parsed.error });
             return;
         }
-        const match = buildMatch(parsed, req.user!._id);
+        const match = await buildMatch(parsed, req.user!._id);
         try {
             const [items, total] = await Promise.all([
                 PrReviewFinding.find(match)
@@ -157,7 +160,7 @@ export function registerFindingsRoutes(app: Express): void {
             res.status(400).json({ error: parsed.error });
             return;
         }
-        const match = buildMatch(parsed, req.user!._id);
+        const match = await buildMatch(parsed, req.user!._id);
         try {
             const agg = await PrReviewFinding.aggregate<{ _id: string; count: number }>([
                 { $match: match },

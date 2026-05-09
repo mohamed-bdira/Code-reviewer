@@ -105,7 +105,8 @@ END_DIFF`;
     const aiReviewText = await runPythonReview(prompt, diffString);
 
     const parsed = parseEnforcerResponse(aiReviewText);
-    let effectiveData = parsed.data;
+    const structuredData = parsed.data;
+    let effectiveData = structuredData;
     let parseError = parsed.parseError;
     if (effectiveData) {
         const scored = effectiveData;
@@ -115,6 +116,9 @@ END_DIFF`;
             parseError = `Missing scores for sections: ${missingDims.join(', ')}`;
         }
     }
+
+    /** Bugs are persisted even when score validation fails (dims missing, etc.). */
+    const bugsFromAi = structuredData?.bugs ?? [];
 
     let mergeRecommended = false;
     let overall = 0;
@@ -130,12 +134,12 @@ END_DIFF`;
     }
 
     let findingsRecorded: number | null = null;
-    if (effectiveData && mongoUri && mongoose.connection.readyState === 1) {
+    if (structuredData && mongoUri && mongoose.connection.readyState === 1) {
         try {
-            if (effectiveData.bugs.length > 0) {
-                await upsertPrReviewFindings(repoFullName, prNumber, effectiveData.bugs, userId);
+            if (bugsFromAi.length > 0) {
+                await upsertPrReviewFindings(repoFullName, prNumber, bugsFromAi, userId);
             }
-            findingsRecorded = effectiveData.bugs.length;
+            findingsRecorded = bugsFromAi.length;
         } catch (err) {
             console.error('PrReviewFinding persist error:', err);
             findingsRecorded = null;
@@ -143,10 +147,14 @@ END_DIFF`;
     }
 
     const hunks = parseDiffHunks(rawDiff);
-    const { inline: inlineComments, orphans: orphanBugs } = bugsToReviewComments(
-        effectiveData?.bugs ?? [],
-        hunks,
-    );
+    let { inline: inlineComments, orphans: orphanBugs } = bugsToReviewComments(bugsFromAi, hunks);
+    if (inlineComments.length > 0 && !headSha) {
+        console.warn(
+            `[review] PR #${prNumber}: skipping ${inlineComments.length} inline comment(s) (missing head SHA); listing in review body instead`,
+        );
+        inlineComments = [];
+        orphanBugs = bugsFromAi;
+    }
 
     const body = formatEnforcerReviewSummary({
         enforcementLevel: effectiveConfig.enforcementLevel,
@@ -164,15 +172,16 @@ END_DIFF`;
 
     if (postComment) {
         try {
-            await octokit.rest.pulls.createReview({
+            const reviewPayload: Parameters<typeof octokit.rest.pulls.createReview>[0] = {
                 owner: repoOwner,
                 repo: repoName,
                 pull_number: prNumber,
-                ...(headSha ? { commit_id: headSha } : {}),
                 event: 'COMMENT',
                 body,
-                comments: inlineComments,
-            });
+                ...(headSha ? { commit_id: headSha } : {}),
+                ...(inlineComments.length > 0 ? { comments: inlineComments } : {}),
+            };
+            await octokit.rest.pulls.createReview(reviewPayload);
             console.log(
                 `Review posted to GitHub (${inlineComments.length} inline, ${orphanBugs.length} orphan).`,
             );

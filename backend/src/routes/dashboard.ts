@@ -4,6 +4,7 @@ import Installation from '../../models/Installation.js';
 import PrReviewFinding from '../../models/PrReviewFinding.js';
 import RepoConfig from '../../models/RepoConfig.js';
 import { requireAuth } from '../auth/middleware.js';
+import { matchFindingsVisibleToUser } from '../findings/findingVisibility.js';
 import { readScheduledScanEnv } from '../scheduler/bugScan.js';
 
 type RepoRow = {
@@ -67,12 +68,12 @@ async function aggregateFindingStats(userId: string): Promise<{
         return { totalStored: null, topCategories: [] };
     }
     try {
-        const userObjectId = new Types.ObjectId(userId);
+        const visibility = await matchFindingsVisibleToUser(userId);
         const agg = await PrReviewFinding.aggregate<{
             total: { n: number }[];
             cats: { _id: string; count: number }[];
         }>([
-            { $match: { userId: userObjectId } },
+            { $match: visibility },
             {
                 $facet: {
                     total: [{ $count: 'n' }],

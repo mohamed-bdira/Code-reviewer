@@ -4,7 +4,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import Installation from '../models/Installation.js';
 import RepoConfig from '../models/RepoConfig.js';
-import { getInstallationOctokit } from './github/octokit.js';
+import { getAppOctokit, getInstallationOctokit } from './github/octokit.js';
 import { getEffectiveRepoConfig } from './review/effectiveRepoConfig.js';
 import { userHasActiveApiKey } from './auth/apiKeys.js';
 import { reviewPullRequest } from './review/reviewPullRequest.js';
@@ -60,18 +60,55 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
     try {
         const payload = JSON.parse(String(rawBody ?? '{}'));
         const action = payload.action;
+        const ghEvent = String(req.headers['x-github-event'] ?? '');
+
+        if (ghEvent !== 'pull_request') {
+            return;
+        }
 
         if (action !== 'opened' && action !== 'synchronize') {
             return;
         }
 
-        const installationId = payload.installation?.id;
-        if (!installationId) {
-            console.warn('[webhook] missing installation.id in payload; skipping');
+        const prTitle = payload.pull_request?.title || 'No title.';
+        const prDescription = payload.pull_request?.body || 'No description.';
+        const repoOwner = payload.repository?.owner?.login;
+        const repoName = payload.repository?.name;
+        const prNumber = payload.pull_request?.number;
+        const repoFullName = payload.repository?.full_name || `${repoOwner}/${repoName}`;
+        const baseSha: string | undefined = payload.pull_request?.base?.sha;
+        const headSha: string | undefined = payload.pull_request?.head?.sha;
+
+        if (!repoOwner || !repoName || !prNumber || !repoFullName) {
+            console.warn('[webhook] missing repository or PR number; skipping');
             return;
         }
 
-        const install = await Installation.findOne({ installationId: String(installationId) }).exec();
+        let installationIdRaw: number | string | undefined = payload.installation?.id;
+
+        if (installationIdRaw === undefined || installationIdRaw === null) {
+            try {
+                const appOctokit = getAppOctokit();
+                const { data } = await appOctokit.rest.apps.getRepoInstallation({
+                    owner: repoOwner,
+                    repo: repoName,
+                });
+                installationIdRaw = data.id;
+                console.log(
+                    `[webhook] resolved installation id ${installationIdRaw} via getRepoInstallation (${repoFullName})`,
+                );
+            } catch (err) {
+                console.warn(
+                    `[webhook] missing installation.id in payload and getRepoInstallation failed for ${repoFullName}. Install the GitHub App on this repo and ensure GITHUB_APP_ID / private key are set:`,
+                    err,
+                );
+                return;
+            }
+        }
+
+        const installationId = String(installationIdRaw);
+
+        const install = await Installation.findOne({ installationId }).exec();
         if (!install) {
             console.warn(`[webhook] no Installation linked for installationId=${installationId}; skipping`);
             return;
@@ -86,19 +123,6 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
                 );
                 return;
             }
-        }
-
-        const prTitle = payload.pull_request?.title || 'No title.';
-        const prDescription = payload.pull_request?.body || 'No description.';
-        const repoOwner = payload.repository?.owner?.login;
-        const repoName = payload.repository?.name;
-        const prNumber = payload.pull_request?.number;
-        const repoFullName = payload.repository?.full_name || `${repoOwner}/${repoName}`;
-        const baseSha: string | undefined = payload.pull_request?.base?.sha;
-        const headSha: string | undefined = payload.pull_request?.head?.sha;
-
-        if (!repoOwner || !repoName || !prNumber || !repoFullName) {
-            throw new Error('missing required repository/PR fields in webhook payload');
         }
 
         let config = await RepoConfig.findOne({ userId: install.userId, repoFullName }).exec();

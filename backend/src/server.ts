@@ -29,7 +29,14 @@ if (!mongoUri) {
 } else {
     mongoose
         .connect(mongoUri)
-        .then(() => console.log('Connected to MongoDB'))
+        .then(async () => {
+            console.log('Connected to MongoDB');
+            try {
+                await RepoConfig.syncIndexes();
+            } catch (err) {
+                console.error('[mongo] RepoConfig.syncIndexes failed (check for stale unique indexes):', err);
+            }
+        })
         .catch((err) => console.error('MongoDB connection error:', err));
 }
 
@@ -94,16 +101,42 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
             throw new Error('missing required repository/PR fields in webhook payload');
         }
 
-        let config = await RepoConfig.findOne({ userId: install.userId, repoFullName });
+        let config = await RepoConfig.findOne({ userId: install.userId, repoFullName }).exec();
 
         if (!config) {
-            console.log(`[webhook] No RepoConfig for user ${userId} / ${repoFullName}; creating defaults...`);
-            config = new RepoConfig({
-                userId: install.userId,
-                installationId: String(installationId),
-                repoFullName,
-            });
+            console.log(`[webhook] No RepoConfig for user ${userId} / ${repoFullName}; upserting defaults...`);
+            try {
+                config = await RepoConfig.findOneAndUpdate(
+                    { userId: install.userId, repoFullName },
+                    {
+                        $set: { installationId: String(installationId) },
+                        $setOnInsert: {
+                            userId: install.userId,
+                            repoFullName,
+                        },
+                    },
+                    { upsert: true, new: true, runValidators: true },
+                ).exec();
+            } catch (err) {
+                const dup =
+                    err &&
+                    typeof err === 'object' &&
+                    'code' in err &&
+                    (err as { code?: number }).code === 11_000;
+                if (dup) {
+                    config = await RepoConfig.findOne({ userId: install.userId, repoFullName }).exec();
+                }
+                if (!config) {
+                    throw err;
+                }
+            }
+        } else if (config.installationId !== String(installationId)) {
+            config.installationId = String(installationId);
             await config.save();
+        }
+
+        if (!config) {
+            throw new Error(`RepoConfig missing after upsert for ${userId} / ${repoFullName}`);
         }
 
         const effectiveConfig = getEffectiveRepoConfig(config.toObject());

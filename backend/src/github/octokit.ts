@@ -13,6 +13,11 @@ function loadPrivateKey(): string {
     if (cachedPrivateKey) {
         return cachedPrivateKey;
     }
+    const inline = process.env.GITHUB_APP_PRIVATE_KEY?.trim();
+    if (inline) {
+        cachedPrivateKey = inline.replace(/\\n/g, '\n');
+        return cachedPrivateKey;
+    }
     const envPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
     const keyPath = envPath
         ? path.resolve(envPath)

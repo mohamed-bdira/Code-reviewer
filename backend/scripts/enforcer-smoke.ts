@@ -33,6 +33,7 @@ Narrative review here.
 {
     const p = parseEnforcerResponse(good);
     assert('parses fence', p.data !== null && p.parseError === null);
+    assert('no orphan bugs when full parse', p.orphanParsedBugs.length === 0);
     assert('prose omits json', p.prose.includes('Narrative') && !p.prose.includes('```json'));
     const ev = evaluateMergeReadiness(p.data!, 70);
     assert('merge ok', ev.mergeRecommended && ev.overall === 80);
@@ -113,6 +114,17 @@ Narrative review here.
     );
     assert('inline anchors line in diff', split.inline.length === 1 && split.inline[0]?.line === 2);
     assert('orphans collected', split.orphans.length === 2);
+}
+
+{
+    const partial = parseEnforcerResponse(`Review text only before fence.
+
+\`\`\`json
+{"scores":{},"bugs":[{"category":"security","file":"backend/src/x.ts","lineStart":1,"description":"scores object empty"}]}
+\`\`\``);
+    assert('invalid scores yields null data', partial.data === null);
+    assert('bugs still extracted as orphanParsedBugs', partial.orphanParsedBugs.length === 1);
+    assert('orphan bug file path', partial.orphanParsedBugs[0]?.file === 'backend/src/x.ts');
 }
 
 console.log('\nAll enforcer smoke checks passed.');

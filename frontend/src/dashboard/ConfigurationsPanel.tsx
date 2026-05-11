@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     createInstallation,
     deleteInstallation,
+    getGithubInstallUrl,
     listInstallations,
     type Installation,
 } from '../api/installations';
@@ -17,8 +18,11 @@ import {
 } from '../api/repoConfigs';
 import { formatIso } from './formatters';
 
-const FOCUS_OPTIONS = ['security', 'style', 'performance', 'tests', 'docs', 'a11y'] as const;
+const FOCUS_OPTIONS = ['security', 'style', 'css', 'performance', 'tests', 'docs', 'a11y'] as const;
 const ENFORCEMENT_OPTIONS: ('warning' | 'error')[] = ['warning', 'error'];
+/** Must match server [PFE/backend/src/routes/repoConfigs.ts] FOCUS_TAG_PATTERN */
+const FOCUS_TAG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+const MAX_FOCUS_AREAS = 16;
 
 export default function ConfigurationsPanel() {
     const [installations, setInstallations] = useState<Installation[]>([]);
@@ -79,6 +83,7 @@ function InstallationsSection({
 }) {
     const [manual, setManual] = useState('');
     const [busy, setBusy] = useState(false);
+    const [installBusy, setInstallBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
 
     const onAdd = async (e: React.FormEvent) => {
@@ -112,6 +117,19 @@ function InstallationsSection({
         }
     };
 
+    const onInstallOnGithub = async () => {
+        setErr(null);
+        setInstallBusy(true);
+        try {
+            const { url } = await getGithubInstallUrl();
+            window.location.assign(url);
+        } catch (error) {
+            setErr(extractMessage(error));
+        } finally {
+            setInstallBusy(false);
+        }
+    };
+
     return (
         <section className="space-y-4">
             <header>
@@ -122,12 +140,14 @@ function InstallationsSection({
             </header>
 
             <div className="flex flex-wrap items-center gap-3">
-                <a
-                    href="/api/github/install"
-                    className="rounded bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500"
+                <button
+                    type="button"
+                    disabled={installBusy}
+                    onClick={() => void onInstallOnGithub()}
+                    className="rounded bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-60"
                 >
-                    Install on GitHub
-                </a>
+                    {installBusy ? 'Opening GitHub…' : 'Install on GitHub'}
+                </button>
                 <span className="text-xs text-slate-500">or paste an installation ID below</span>
             </div>
 
@@ -244,6 +264,8 @@ function RepoConfigsSection({
 
 function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChanged: () => void }) {
     const [draft, setDraft] = useState<RepoConfigView>(config);
+    const [customFocusInput, setCustomFocusInput] = useState('');
+    const [focusErr, setFocusErr] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [savedAt, setSavedAt] = useState<string | null>(null);
     const [err, setErr] = useState<string | null>(null);
@@ -264,12 +286,59 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
     }, [draft, config]);
 
     const onToggleFocus = (area: string) => {
+        setDraft((d) => {
+            const has = d.focusAreas.includes(area);
+            if (has) {
+                setFocusErr(null);
+                return { ...d, focusAreas: d.focusAreas.filter((x) => x !== area) };
+            }
+            if (d.focusAreas.length >= MAX_FOCUS_AREAS) {
+                setFocusErr(`At most ${MAX_FOCUS_AREAS} dimensions. Remove one first.`);
+                return d;
+            }
+            setFocusErr(null);
+            return { ...d, focusAreas: [...d.focusAreas, area] };
+        });
+    };
+
+    const removeFocus = (tag: string) => {
         setDraft((d) => ({
             ...d,
-            focusAreas: d.focusAreas.includes(area)
-                ? d.focusAreas.filter((x) => x !== area)
-                : [...d.focusAreas, area],
+            focusAreas: d.focusAreas.filter((x) => x !== tag),
         }));
+        setFocusErr(null);
+    };
+
+    const addCustomFocus = () => {
+        const raw = customFocusInput.trim().toLowerCase();
+        if (!raw) {
+            setFocusErr('Enter a dimension name.');
+            return;
+        }
+        if (!FOCUS_TAG_PATTERN.test(raw)) {
+            setFocusErr(
+                'Use lowercase letters, numbers, underscores, or hyphens only (e.g. css, tailwind, graphql).',
+            );
+            return;
+        }
+        if (draft.focusAreas.includes(raw)) {
+            setFocusErr('Already added.');
+            return;
+        }
+        if (draft.focusAreas.length >= MAX_FOCUS_AREAS) {
+            setFocusErr(`At most ${MAX_FOCUS_AREAS} dimensions.`);
+            return;
+        }
+        setFocusErr(null);
+        setCustomFocusInput('');
+        setDraft((d) => ({ ...d, focusAreas: [...d.focusAreas, raw] }));
+    };
+
+    const onCustomFocusKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addCustomFocus();
+        }
     };
 
     const onSave = async () => {
@@ -324,26 +393,102 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
-                <div>
-                    <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">Focus areas</label>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                        {FOCUS_OPTIONS.map((area) => {
-                            const on = draft.focusAreas.includes(area);
-                            return (
-                                <button
-                                    type="button"
-                                    key={area}
-                                    onClick={() => onToggleFocus(area)}
-                                    className={`rounded-full border px-3 py-1 text-xs ${
-                                        on
-                                            ? 'border-violet-500 bg-violet-600/30 text-white'
-                                            : 'border-slate-700 bg-slate-950 text-slate-400 hover:bg-slate-800'
-                                    }`}
-                                >
-                                    {area}
-                                </button>
-                            );
-                        })}
+                <div className="lg:col-span-2 space-y-4 rounded-lg border border-slate-800/80 bg-slate-950/30 p-4">
+                    <div>
+                        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                            Review focus dimensions
+                        </h5>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                            Each tag becomes an extra scoring section and emphasis in the AI prompt (merged server-side with{' '}
+                            <code className="rounded bg-slate-900 px-1 text-slate-300">security</code>,{' '}
+                            <code className="rounded bg-slate-900 px-1 text-slate-300">style</code>,{' '}
+                            <code className="rounded bg-slate-900 px-1 text-slate-300">usability</code>). Use{' '}
+                            <strong className="text-slate-400">Custom rules</strong> below for prose instructions (e.g. “prefer Tailwind over raw CSS”).
+                        </p>
+                        <p className="mt-1 text-xs text-slate-600">
+                            Up to {MAX_FOCUS_AREAS} dimensions · lowercase tags only ·{' '}
+                            <span className="font-mono text-slate-500">a-z 0-9 _ -</span>
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                            Quick suggestions
+                        </label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            {FOCUS_OPTIONS.map((area) => {
+                                const on = draft.focusAreas.includes(area);
+                                return (
+                                    <button
+                                        type="button"
+                                        key={area}
+                                        onClick={() => onToggleFocus(area)}
+                                        className={`rounded-full border px-3 py-1 text-xs ${
+                                            on
+                                                ? 'border-violet-500 bg-violet-600/30 text-white'
+                                                : 'border-slate-700 bg-slate-950 text-slate-400 hover:bg-slate-800'
+                                        }`}
+                                    >
+                                        {area}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-end gap-2">
+                        <label className="block min-w-[200px] flex-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                            Add custom dimension
+                            <input
+                                type="text"
+                                value={customFocusInput}
+                                onChange={(e) => {
+                                    setCustomFocusInput(e.target.value);
+                                    setFocusErr(null);
+                                }}
+                                onKeyDown={onCustomFocusKeyDown}
+                                placeholder="e.g. tailwind, graphql, api"
+                                className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-sm text-white placeholder:text-slate-600"
+                            />
+                        </label>
+                        <button
+                            type="button"
+                            onClick={addCustomFocus}
+                            className="rounded border border-violet-600 bg-violet-600/20 px-4 py-2 text-sm text-violet-200 hover:bg-violet-600/30"
+                        >
+                            Add
+                        </button>
+                    </div>
+                    {focusErr && <p className="text-xs text-rose-400">{focusErr}</p>}
+
+                    <div>
+                        <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                            Active dimensions ({draft.focusAreas.length}/{MAX_FOCUS_AREAS})
+                        </label>
+                        {draft.focusAreas.length === 0 ? (
+                            <p className="mt-2 text-xs text-slate-600">
+                                None selected — the server falls back to defaults when this list is empty after save.
+                            </p>
+                        ) : (
+                            <ul className="mt-2 flex flex-wrap gap-2">
+                                {draft.focusAreas.map((tag) => (
+                                    <li
+                                        key={tag}
+                                        className="inline-flex items-center gap-1 rounded-full border border-slate-600 bg-slate-900 px-2.5 py-1 text-xs text-slate-200"
+                                    >
+                                        <span className="font-mono">{tag}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeFocus(tag)}
+                                            className="rounded px-1 text-slate-500 hover:bg-slate-800 hover:text-white"
+                                            aria-label={`Remove ${tag}`}
+                                        >
+                                            ×
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                     </div>
                 </div>
 
@@ -394,8 +539,12 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
 
                 <div className="lg:col-span-2">
                     <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
-                        Custom rules / focus prompt
+                        Custom rules / instructions (free-form)
                     </label>
+                    <p className="mt-1 text-xs text-slate-600">
+                        Detailed guidance for this repo — not the same as dimension tags above. Example: review CSS consistency,
+                        naming, or framework-specific patterns.
+                    </p>
                     <textarea
                         value={draft.customRules}
                         onChange={(e) => setDraft((d) => ({ ...d, customRules: e.target.value }))}

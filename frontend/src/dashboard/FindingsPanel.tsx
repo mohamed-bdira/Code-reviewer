@@ -125,7 +125,8 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                 <p className="text-sm text-slate-400">
                     Mongo collection <code className="text-slate-300">PrReviewFinding</code> —
                     endpoints <code className="text-slate-300">GET /api/findings</code> and{' '}
-                    <code className="text-slate-300">GET /api/findings/by-category</code>. Bugs are deduped with{' '}
+                    <code className="text-slate-300">GET /api/findings/by-category</code>. You must{' '}
+                    <strong className="text-slate-300">unlock the dashboard</strong> with your API key for these requests to succeed. Bugs are deduped with{' '}
                     <code className="text-slate-300">dedupeKey</code>; timestamps show history across webhook and hourly
                     scan runs.
                 </p>
@@ -214,14 +215,33 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                 </div>
             </form>
 
+            {error && (
+                <div className="rounded border border-amber-900/80 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
+                    <strong className="font-medium">Could not load findings.</strong> {error}
+                    <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-amber-200/90">
+                        <li>
+                            <strong className="font-medium text-amber-100">401</strong> — session or API key rejected (revoked key or expired login). Regenerate a key or sign in again, then unlock the dashboard.
+                        </li>
+                        <li>
+                            Wrong API host — set <code className="rounded bg-black/30 px-1">VITE_API_BASE_URL</code> to your backend base URL if the SPA is not served behind the same origin as <code className="rounded bg-black/30 px-1">/api</code>.
+                        </li>
+                        <li>
+                            Backend on port 3001 + Mongo required; dev proxies <code className="rounded bg-black/30 px-1">/api</code>.
+                        </li>
+                    </ul>
+                </div>
+            )}
+
             <section>
                 <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Counts by category
                 </h3>
-                {loading && !counts ? (
+                {error ? (
+                    <p className="text-sm text-slate-500">Counts unavailable until the request above succeeds.</p>
+                ) : loading && !counts ? (
                     <p className="text-sm text-slate-500">Loading…</p>
                 ) : orderedCategories.length === 0 ? (
-                    <p className="text-sm text-slate-500">No rows for filters.</p>
+                    <p className="text-sm text-slate-500">No rows for these filters (or nothing stored yet).</p>
                 ) : (
                     <ul className="flex flex-wrap gap-2">
                         {orderedCategories.map(([cat, n]) => (
@@ -236,16 +256,6 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                     </ul>
                 )}
             </section>
-
-            {error && (
-                <div className="rounded border border-amber-900/80 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
-                    <strong className="font-medium">Could not load.</strong> {error}
-                    <p className="mt-2 text-xs text-amber-200/80">
-                        Backend on port 3001 + Mongo required; dev proxies <code className="rounded bg-black/30 px-1">/api</code>
-                        .
-                    </p>
-                </div>
-            )}
 
             <section>
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
@@ -280,8 +290,19 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                             )}
                             {!loading && list && list.items.length === 0 && (
                                 <tr>
-                                    <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
-                                        No findings.
+                                    <td colSpan={7} className="px-3 py-8">
+                                        <p className="text-center text-slate-400">No findings match this query.</p>
+                                        <ul className="mx-auto mt-3 max-w-lg list-inside list-disc space-y-1 text-left text-xs text-slate-500">
+                                            <li>
+                                                Clear filters above — narrow repo, PR, category, or date can hide everything.
+                                            </li>
+                                            <li>
+                                                Rows are scoped to <strong className="text-slate-400">your account</strong> in MongoDB (<code className="text-slate-400">PrReviewFinding.userId</code> or legacy docs for repos in your <strong className="text-slate-400">Configurations</strong>).
+                                            </li>
+                                            <li>
+                                                If the count stays 0 after PRs: confirm the GitHub App installation is linked, webhooks reach the server, and reviews run (server logs).
+                                            </li>
+                                        </ul>
                                     </td>
                                 </tr>
                             )}

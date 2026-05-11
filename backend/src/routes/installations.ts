@@ -130,16 +130,35 @@ export function registerInstallationRoutes(app: Express): void {
         res.json({ ok: true });
     });
 
-    router.get('/api/github/install', requireAuth, (req: Request, res: Response) => {
-        const slug = process.env.GITHUB_APP_SLUG;
+    function buildGithubNewInstallUrl(userId: string): { ok: true; url: string } | { ok: false; status: number; error: string } {
+        const slug = process.env.GITHUB_APP_SLUG?.trim();
         if (!slug) {
-            res.status(503).json({ error: 'GITHUB_APP_SLUG is not configured' });
-            return;
+            return { ok: false, status: 503, error: 'GITHUB_APP_SLUG is not configured' };
         }
-        const state = signInstallState(req.user!._id);
+        const state = signInstallState(userId);
         const url = new URL(`https://github.com/apps/${encodeURIComponent(slug)}/installations/new`);
         url.searchParams.set('state', state);
-        res.redirect(url.toString());
+        return { ok: true, url: url.toString() };
+    }
+
+    /** Full-page redirect; supports `?token=` session JWT for bookmarks (same as requireAuth). */
+    router.get('/api/github/install', requireAuth, (req: Request, res: Response) => {
+        const built = buildGithubNewInstallUrl(req.user!._id);
+        if (!built.ok) {
+            res.status(built.status).json({ error: built.error });
+            return;
+        }
+        res.redirect(built.url);
+    });
+
+    /** JSON URL for SPA "Install" button so the session Bearer is sent (plain `<a href>` cannot). */
+    router.post('/api/github/install-link', requireAuth, (req: Request, res: Response) => {
+        const built = buildGithubNewInstallUrl(req.user!._id);
+        if (!built.ok) {
+            res.status(built.status).json({ error: built.error });
+            return;
+        }
+        res.json({ url: built.url });
     });
 
     router.get('/api/github/setup', async (req: Request, res: Response) => {

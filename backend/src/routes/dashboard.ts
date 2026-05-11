@@ -169,7 +169,7 @@ export function registerDashboardRoutes(app: Express): void {
             aiReview: {
                 pythonBin: process.env.PYTHON_BIN ?? 'python',
                 pythonScriptPathEnvSet: Boolean(process.env.PYTHON_SCRIPT_PATH?.trim()),
-                defaultRelativeScript: 'PFE/pythonExploit.py',
+                defaultRelativeScript: 'scripts/pythonExploit.py',
                 noCookieTokenAuthNote:
                     'pythonExploit.py posts to the Gemini web endpoint using only minimal static HTTP headers — no Cookie, Authorization Bearer, or custom API token headers.',
                 pipelineSteps: [

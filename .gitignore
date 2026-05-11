@@ -1,5 +1,4 @@
-# Never commit or push: local script, GitHub App key, env secrets
-pythonExploit.py
+# Never commit or push: GitHub App key, env secrets
 github-app-key.pem
 .env
 

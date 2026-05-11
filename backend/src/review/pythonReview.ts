@@ -1,15 +1,11 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 export function runPythonReview(prompt: string, diff: string): Promise<string> {
     const pythonBin = process.env.PYTHON_BIN || 'python';
-    const scriptPath = process.env.PYTHON_SCRIPT_PATH
+    const scriptPath = process.env.PYTHON_SCRIPT_PATH?.trim()
         ? path.resolve(process.cwd(), process.env.PYTHON_SCRIPT_PATH)
-        : path.resolve(__dirname, '..', '..', '..', 'pythonExploit.py');
+        : path.resolve(process.cwd(), 'scripts', 'pythonExploit.py');
 
     return new Promise((resolve, reject) => {
         const child = spawn(pythonBin, [scriptPath], {

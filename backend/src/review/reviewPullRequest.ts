@@ -117,8 +117,8 @@ END_DIFF`;
         }
     }
 
-    /** Bugs are persisted even when score validation fails (dims missing, etc.). */
-    const bugsFromAi = structuredData?.bugs ?? [];
+    /** Bugs are persisted whenever the model lists them in JSON, even if scores failed validation. */
+    const bugsFromAi = structuredData?.bugs ?? parsed.orphanParsedBugs ?? [];
 
     let mergeRecommended = false;
     let overall = 0;
@@ -134,11 +134,9 @@ END_DIFF`;
     }
 
     let findingsRecorded: number | null = null;
-    if (structuredData && mongoUri && mongoose.connection.readyState === 1) {
+    if (bugsFromAi.length > 0 && mongoUri && mongoose.connection.readyState === 1) {
         try {
-            if (bugsFromAi.length > 0) {
-                await upsertPrReviewFindings(repoFullName, prNumber, bugsFromAi, userId);
-            }
+            await upsertPrReviewFindings(repoFullName, prNumber, bugsFromAi, userId);
             findingsRecorded = bugsFromAi.length;
         } catch (err) {
             console.error('PrReviewFinding persist error:', err);

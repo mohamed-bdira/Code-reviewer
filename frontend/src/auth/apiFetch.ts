@@ -3,6 +3,16 @@ const BASE = (): string => (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/
 export function getApiBaseUrl(): string {
     return BASE();
 }
+
+/** Full URL for `<a href>` navigation. Uses `VITE_API_BASE_URL` when set; otherwise same-origin paths (Vite dev proxy). */
+export function apiBrowserUrl(pathWithQuery: string): string {
+    const base = BASE();
+    const path = pathWithQuery.startsWith('/') ? pathWithQuery : `/${pathWithQuery}`;
+    if (!base) {
+        return path;
+    }
+    return `${base}${path}`;
+}
 const TOKEN_KEY = 'pfe.token';
 const SERVICE_KEY_KEY = 'pfe.serviceKey';
 

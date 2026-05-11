@@ -279,15 +279,19 @@ export type ParsedEnforcerResult = {
     data: EnforcerPayload | null;
     prose: string;
     parseError: string | null;
+    /** Bugs read from the JSON fence when full payload validation failed (e.g. invalid scores). */
+    orphanParsedBugs: ReviewBugInput[];
 };
 
 export function parseEnforcerResponse(raw: string): ParsedEnforcerResult {
+    const emptyBugs: ReviewBugInput[] = [];
     const extracted = extractJsonObjectString(raw);
     if (!extracted) {
         return {
             data: null,
             prose: raw.trim(),
             parseError: 'No JSON block found in model output.',
+            orphanParsedBugs: emptyBugs,
         };
     }
 
@@ -299,15 +303,7 @@ export function parseEnforcerResponse(raw: string): ParsedEnforcerResult {
             data: null,
             prose: raw.trim(),
             parseError: 'JSON in fence could not be parsed.',
-        };
-    }
-
-    const data = parseEnforcerPayload(parsed);
-    if (!data) {
-        return {
-            data: null,
-            prose: raw.trim(),
-            parseError: 'JSON did not match enforcer shape (scores required).',
+            orphanParsedBugs: emptyBugs,
         };
     }
 
@@ -315,10 +311,30 @@ export function parseEnforcerResponse(raw: string): ParsedEnforcerResult {
     const tail = raw.slice(extracted.fullMatchEnd).trim();
     const prose = [head, tail].filter(Boolean).join('\n\n').trim();
 
+    const data = parseEnforcerPayload(parsed);
+    let orphanParsedBugs: ReviewBugInput[] = emptyBugs;
+    if (!data && isPlainObject(parsed)) {
+        orphanParsedBugs = parseBugsArray((parsed as Record<string, unknown>).bugs);
+    }
+
+    if (!data) {
+        const parseError =
+            orphanParsedBugs.length > 0
+                ? 'Structured scores missing or invalid; bugs below were still extracted for the dashboard.'
+                : 'JSON did not match enforcer shape (scores required).';
+        return {
+            data: null,
+            prose,
+            parseError,
+            orphanParsedBugs,
+        };
+    }
+
     return {
         data,
         prose,
         parseError: null,
+        orphanParsedBugs: emptyBugs,
     };
 }
 

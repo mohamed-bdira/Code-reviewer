@@ -77,6 +77,17 @@ export default function DashboardUnlockGate({ children }: Props) {
                     your login). Generate one under <em>API keys</em>, then paste the full <code className="text-emerald-300">pfe_…</code>{' '}
                     secret here. Key management still uses your session.
                 </p>
+                <ul className="mt-3 list-inside list-disc space-y-1 text-xs text-slate-500">
+                    <li>
+                        <strong className="text-slate-400">Overview</strong> (stored counts) and <strong className="text-slate-400">Bug findings</strong> call the API with this key — they stay empty until you unlock.
+                    </li>
+                    <li>
+                        Only the <strong className="text-slate-400">API keys</strong> page works without it (session only).
+                    </li>
+                    <li>
+                        After unlocking, use DevTools <strong className="text-slate-400">Network</strong>: <code className="text-slate-400">GET /api/findings</code> should return <strong className="text-slate-400">200</strong> with <code className="text-slate-400">items</code> / <code className="text-slate-400">total</code>.
+                    </li>
+                </ul>
                 <p className="mt-2 text-xs text-slate-500">
                     GitHub webhooks cannot read this paste; optionally the server can delay reviews until you have created a
                     key—see <code className="text-slate-400">REQUIRE_API_KEY_FOR_REVIEWS</code> in backend env.

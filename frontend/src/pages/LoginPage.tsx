@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { apiBrowserUrl } from '../auth/apiFetch';
 
 export default function LoginPage() {
     const { login } = useAuth();
@@ -77,7 +78,7 @@ export default function LoginPage() {
 
                 <div className="space-y-2 border-t border-slate-800 pt-4">
                     <a
-                        href={`/api/auth/github/start?next=${encodeURIComponent(next)}`}
+                        href={apiBrowserUrl(`/api/auth/github/start?next=${encodeURIComponent(next)}`)}
                         className="block w-full rounded border border-slate-600 bg-slate-800 px-4 py-2 text-center text-sm hover:bg-slate-700"
                     >
                         Sign in with GitHub

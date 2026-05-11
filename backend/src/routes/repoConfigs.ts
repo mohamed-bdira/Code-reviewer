@@ -7,8 +7,11 @@ import { requireAuth } from '../auth/middleware.js';
 import { publish } from '../events/bus.js';
 import { getInstallationOctokit } from '../github/octokit.js';
 
-const ALLOWED_FOCUS = new Set(['security', 'style', 'performance', 'tests', 'docs', 'a11y']);
 const ALLOWED_ENFORCEMENT = new Set(['warning', 'error']);
+
+/** Safe focus dimension tags (merged with defaults security/style/usability for scoring). */
+const FOCUS_TAG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+const MAX_FOCUS_AREAS = 16;
 
 type RepoConfigView = {
     id: string;
@@ -62,14 +65,17 @@ function sanitizeFocusAreas(input: unknown): string[] | null {
     if (!Array.isArray(input)) {
         return null;
     }
-    const seen: string[] = [];
+    const seen = new Set<string>();
+    const out: string[] = [];
     for (const item of input) {
         if (typeof item !== 'string') continue;
         const v = item.trim().toLowerCase();
-        if (!ALLOWED_FOCUS.has(v) || seen.includes(v)) continue;
-        seen.push(v);
+        if (!FOCUS_TAG_PATTERN.test(v) || seen.has(v)) continue;
+        seen.add(v);
+        out.push(v);
+        if (out.length >= MAX_FOCUS_AREAS) break;
     }
-    return seen;
+    return out;
 }
 
 async function ensureInstallationOwned(userId: string, installationId: string): Promise<boolean> {

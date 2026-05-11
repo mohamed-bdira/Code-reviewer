@@ -15,6 +15,7 @@ export default function OverviewPanel({
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-slate-400">
                     Snapshot from <code className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-200">GET /api/dashboard/summary</code>
+                    . Uses the same auth as other dashboard calls (API key when set).
                 </p>
                 <button
                     type="button"
@@ -62,6 +63,28 @@ export default function OverviewPanel({
                     </p>
                 </MetricCard>
             </div>
+
+            {summary &&
+                summary.mongodb.connected &&
+                summary.findings.totalStored === 0 &&
+                summary.findings.topCategories.length === 0 && (
+                <section className="rounded-lg border border-slate-700/80 bg-slate-900/30 p-4">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">No stored bugs yet</h3>
+                    <p className="mt-2 text-sm text-slate-400">
+                        Mongo is connected but <strong className="text-slate-300">PrReviewFinding</strong> has no rows visible for your account.
+                    </p>
+                    <ul className="mt-3 list-inside list-disc space-y-1 text-xs text-slate-500">
+                        <li>Open <strong className="text-slate-400">Bug findings</strong> and confirm <code className="text-slate-400">GET /api/findings</code> returns 200 in the browser Network tab.</li>
+                        <li>
+                            Data only appears after reviews persist bugs — check GitHub App <strong className="text-slate-400">installation</strong>, webhook delivery, and server logs (skipped reviews,{' '}
+                            <code className="text-slate-400">REQUIRE_API_KEY_FOR_REVIEWS</code>, etc.).
+                        </li>
+                        <li>
+                            If you changed login accounts, findings belong to the user linked to the installation; they will not follow a different dashboard user.
+                        </li>
+                    </ul>
+                </section>
+            )}
 
             {summary && summary.findings.topCategories.length > 0 && (
                 <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">

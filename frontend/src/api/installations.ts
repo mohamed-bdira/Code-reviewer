@@ -24,3 +24,7 @@ export function deleteInstallation(id: string): Promise<{ ok: true }> {
         method: 'DELETE',
     });
 }
+
+export function getGithubInstallUrl(): Promise<{ url: string }> {
+    return apiFetch<{ url: string }>('/api/github/install-link', { method: 'POST' });
+}

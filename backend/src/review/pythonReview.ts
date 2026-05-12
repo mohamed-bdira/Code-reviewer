@@ -1,11 +1,44 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+function findBundledPythonExploit(): string | null {
+    let dir = path.dirname(fileURLToPath(import.meta.url));
+    for (let i = 0; i < 8; i += 1) {
+        const candidate = path.join(dir, 'scripts', 'pythonExploit.py');
+        if (existsSync(candidate)) {
+            return candidate;
+        }
+        const parent = path.dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+    }
+    return null;
+}
+
+function resolvePythonScriptPath(): string {
+    const cwd = process.cwd();
+    const envRaw = process.env.PYTHON_SCRIPT_PATH?.trim() ?? '';
+    const envResolved = envRaw ? path.resolve(cwd, envRaw) : '';
+    if (envResolved && existsSync(envResolved)) {
+        return envResolved;
+    }
+    const bundled = findBundledPythonExploit();
+    if (bundled) {
+        if (envResolved && !existsSync(envResolved)) {
+            console.warn(
+                `[pythonReview] PYTHON_SCRIPT_PATH (${envResolved}) does not exist; using ${bundled}`,
+            );
+        }
+        return bundled;
+    }
+    return path.resolve(cwd, 'scripts', 'pythonExploit.py');
+}
 
 export function runPythonReview(prompt: string, diff: string): Promise<string> {
     const pythonBin = process.env.PYTHON_BIN || 'python';
-    const scriptPath = process.env.PYTHON_SCRIPT_PATH?.trim()
-        ? path.resolve(process.cwd(), process.env.PYTHON_SCRIPT_PATH)
-        : path.resolve(process.cwd(), 'scripts', 'pythonExploit.py');
+    const scriptPath = resolvePythonScriptPath();
 
     return new Promise((resolve, reject) => {
         const child = spawn(pythonBin, [scriptPath], {

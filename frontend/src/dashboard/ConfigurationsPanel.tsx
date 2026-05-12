@@ -122,7 +122,11 @@ function InstallationsSection({
         setInstallBusy(true);
         try {
             const { url } = await getGithubInstallUrl();
-            window.location.assign(url);
+            if (!url.startsWith('https://')) {
+                setErr('Server returned an invalid install URL.');
+                return;
+            }
+            window.location.replace(url);
         } catch (error) {
             setErr(extractMessage(error));
         } finally {
@@ -148,8 +152,15 @@ function InstallationsSection({
                 >
                     {installBusy ? 'Opening GitHub…' : 'Install on GitHub'}
                 </button>
-                <span className="text-xs text-slate-500">or paste an installation ID below</span>
+                <span className="text-xs text-slate-500">
+                    or paste an installation ID below
+                </span>
             </div>
+            <p className="text-xs text-slate-500">
+                Requires <code className="rounded bg-black/30 px-1">GITHUB_APP_SLUG</code> (or{' '}
+                <code className="rounded bg-black/30 px-1">GITHUB_APP_INSTALL_URL</code>) in server env. Sends you to
+                GitHub&apos;s install screen for your app.
+            </p>
 
             <form onSubmit={onAdd} className="flex flex-wrap items-end gap-2">
                 <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">

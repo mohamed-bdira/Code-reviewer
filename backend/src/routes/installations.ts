@@ -131,13 +131,25 @@ export function registerInstallationRoutes(app: Express): void {
     });
 
     function buildGithubNewInstallUrl(userId: string): { ok: true; url: string } | { ok: false; status: number; error: string } {
+        const custom = process.env.GITHUB_APP_INSTALL_URL?.trim();
         const slug = process.env.GITHUB_APP_SLUG?.trim();
-        if (!slug) {
-            return { ok: false, status: 503, error: 'GITHUB_APP_SLUG is not configured' };
+        let url: URL;
+        if (custom) {
+            try {
+                url = new URL(custom);
+            } catch {
+                return { ok: false, status: 503, error: 'GITHUB_APP_INSTALL_URL is not a valid URL' };
+            }
+        } else if (slug) {
+            url = new URL(`https://github.com/apps/${encodeURIComponent(slug)}/installations/new`);
+        } else {
+            return {
+                ok: false,
+                status: 503,
+                error: 'Set GITHUB_APP_SLUG (short name from the app’s Public page) or GITHUB_APP_INSTALL_URL in the server environment.',
+            };
         }
-        const state = signInstallState(userId);
-        const url = new URL(`https://github.com/apps/${encodeURIComponent(slug)}/installations/new`);
-        url.searchParams.set('state', state);
+        url.searchParams.set('state', signInstallState(userId));
         return { ok: true, url: url.toString() };
     }
 
@@ -145,10 +157,19 @@ export function registerInstallationRoutes(app: Express): void {
     router.get('/api/github/install', requireAuth, (req: Request, res: Response) => {
         const built = buildGithubNewInstallUrl(req.user!._id);
         if (!built.ok) {
+            if (req.accepts('html')) {
+                const back = `${frontendBase()}/configurations`;
+                res.status(built.status)
+                    .type('html')
+                    .send(
+                        `<!DOCTYPE html><html lang="en"><meta charset="utf-8"/><title>Install GitHub App</title><body style="font-family:system-ui,sans-serif;padding:2rem;max-width:40rem"><h1>Can’t open GitHub install page</h1><p>${built.error}</p><p><a href="${back}">Back to configurations</a></p></body></html>`,
+                    );
+                return;
+            }
             res.status(built.status).json({ error: built.error });
             return;
         }
-        res.redirect(built.url);
+        res.redirect(302, built.url);
     });
 
     /** JSON URL for SPA "Install" button so the session Bearer is sent (plain `<a href>` cannot). */

@@ -79,10 +79,15 @@ export default function LoginPage() {
                 <div className="space-y-2 border-t border-slate-800 pt-4">
                     <a
                         href={apiBrowserUrl(`/api/auth/github/start?next=${encodeURIComponent(next)}`)}
-                        className="block w-full rounded border border-slate-600 bg-slate-800 px-4 py-2 text-center text-sm hover:bg-slate-700"
+                        target="_self"
+                        rel="nofollow"
+                        className="block w-full rounded border border-slate-600 bg-slate-800 px-4 py-2 text-center text-sm font-medium text-white hover:bg-slate-700"
                     >
                         Sign in with GitHub
                     </a>
+                    <p className="text-center text-[11px] text-slate-500">
+                        Opens GitHub to authorize this app (OAuth), then returns you here.
+                    </p>
                 </div>
 
                 <p className="text-center text-xs text-slate-500">

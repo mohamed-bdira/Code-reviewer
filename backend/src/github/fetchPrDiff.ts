@@ -25,19 +25,38 @@ export function normalizeDiffPayload(payload: unknown): string {
     }
 }
 
+function isUnifiedDiffUnavailable(err: unknown): boolean {
+    return (
+        typeof err === 'object' &&
+        err !== null &&
+        'status' in err &&
+        (err as { status: number }).status === 406
+    );
+}
+
 async function fetchUnifiedDiffFromPullGet(
     octokit: Octokit,
     owner: string,
     repo: string,
     pullNumber: number,
 ): Promise<string> {
-    const { data } = await octokit.rest.pulls.get({
-        owner,
-        repo,
-        pull_number: pullNumber,
-        mediaType: { format: 'diff' },
-    });
-    return normalizeDiffPayload(data);
+    try {
+        const { data } = await octokit.rest.pulls.get({
+            owner,
+            repo,
+            pull_number: pullNumber,
+            mediaType: { format: 'diff' },
+        });
+        return normalizeDiffPayload(data);
+    } catch (err) {
+        if (isUnifiedDiffUnavailable(err)) {
+            console.warn(
+                `[fetchPrDiff] unified diff unavailable for ${owner}/${repo}#${pullNumber} (GitHub rejects oversized diff); falling back to per-file patches.`,
+            );
+            return '';
+        }
+        throw err;
+    }
 }
 
 async function concatPatchesFromListFiles(

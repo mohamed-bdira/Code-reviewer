@@ -14,7 +14,11 @@ import { upsertPrReviewFindings } from '../findings/upsertPrReviewFindings.js';
 import { fetchPrDiffString } from '../github/fetchPrDiff.js';
 import { bugsToReviewComments, parseDiffHunks, type InlineReviewComment } from '../github/diffHunks.js';
 import type { EffectiveRepoConfig } from './effectiveRepoConfig.js';
-import { runPythonReview } from './pythonReview.js';
+import {
+    buildMinimalGithubRateLimitStub,
+    shouldUsePreemptiveSlimGithubPost,
+} from './githubPostingStrategy.js';
+import { delayMs, runPythonReview } from './pythonReview.js';
 
 /** Max characters of unified diff per AI segment (prompt + subprocess budget). */
 const DIFF_MAX_FOR_AI = 10_000;
@@ -24,6 +28,199 @@ const DIFF_MAX_LINES_PER_SEGMENT = Math.max(
     50,
     Number(process.env.DIFF_REVIEW_MAX_LINES_PER_SEGMENT ?? 400) || 400,
 );
+
+/** Pause between multi-segment AI calls (ms); reduces Gemini/web burst traffic. Default 0. */
+function segmentDelayBetweenAiCallsMs(): number {
+    const n = Number(process.env.AI_REVIEW_SEGMENT_DELAY_MS ?? 0);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/** GitHub secondary rate limits / abuse heuristics trigger on huge reviews (body + many inline comments). */
+const DEFAULT_GITHUB_REVIEW_BODY_MAX_CHARS = 48_000;
+const DEFAULT_GITHUB_REVIEW_MAX_INLINE_COMMENTS = 5;
+/** Multi-segment runs append huge "### Segment …" prose; cap before assembling the Markdown body. */
+const DEFAULT_GITHUB_REVIEW_PROSE_MAX_CHARS = 28_000;
+/** Orphan Markdown tables can dominate body size after multi-segment merges. */
+const DEFAULT_GITHUB_REVIEW_ORPHAN_ROWS_MAX = 64;
+/** When GitHub rejects the full review, regenerate a minimal body (no prose wall, tiny orphan sample). */
+const DEFAULT_GITHUB_REVIEW_EMERGENCY_BODY_CHARS = 12_000;
+const DEFAULT_GITHUB_REVIEW_SLIM_ORPHAN_ROWS = 8;
+
+function envPositiveInt(name: string, fallback: number): number {
+    const n = Number(process.env[name]);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+function sleepGithubBackoff(ms: number): Promise<void> {
+    const clamped = Math.min(Math.max(0, ms), 3_600_000);
+    return new Promise((resolve) => {
+        setTimeout(resolve, clamped);
+    });
+}
+
+function githubErrorText(err: unknown): string {
+    if (err instanceof Error) {
+        return err.message;
+    }
+    if (typeof err === 'object' && err !== null && 'message' in err) {
+        return String((err as { message: unknown }).message);
+    }
+    return String(err);
+}
+
+function isGithubSecondaryOrPrimaryContentLimit(err: unknown): boolean {
+    const o = err as { status?: number; response?: { data?: { message?: string } } };
+    const msg =
+        `${githubErrorText(err)} ${o.response?.data?.message ?? ''}`.toLowerCase();
+    if (o.status === 429) {
+        return true;
+    }
+    if (o.status === 403 && (msg.includes('secondary rate limit') || msg.includes('content creation'))) {
+        return true;
+    }
+    return false;
+}
+
+function getGithubRetryAfterMs(err: unknown): number | null {
+    const o = err as { response?: { headers?: Record<string, unknown> } };
+    const h = o.response?.headers;
+    if (!h) {
+        return null;
+    }
+    const raw = h['retry-after'] ?? h['Retry-After'];
+    if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) {
+        const sec = Number(raw.trim());
+        if (sec > 0) {
+            return Math.min(sec * 1000, 3_600_000);
+        }
+    }
+    return null;
+}
+
+async function runWithGithubContentRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    const maxAttempts = 4;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+            return await fn();
+        } catch (e) {
+            lastErr = e;
+            if (!isGithubSecondaryOrPrimaryContentLimit(e) || attempt >= maxAttempts) {
+                throw e;
+            }
+            const headerMs = getGithubRetryAfterMs(e);
+            const o = e as { status?: number };
+            let computedFloor = Math.min(60_000 * 2 ** (attempt - 1), 480_000);
+            if (o.status === 403) {
+                computedFloor = Math.max(computedFloor, 90_000 + 120_000 * (attempt - 1));
+            }
+            const wait = Math.min(Math.max(headerMs ?? 0, computedFloor), 900_000);
+            console.warn(
+                `[review] GitHub ${label} rate-limited (attempt ${attempt}/${maxAttempts}); waiting ${wait}ms`,
+            );
+            await sleepGithubBackoff(wait);
+        }
+    }
+    throw lastErr;
+}
+
+function truncateGithubMarkdownBody(body: string, maxChars: number): string {
+    if (body.length <= maxChars) {
+        return body;
+    }
+    const budget = Math.max(2000, maxChars - 320);
+    let head = body.slice(0, budget);
+    const cutSection = head.lastIndexOf('\n### ');
+    if (cutSection > budget * 0.35) {
+        head = head.slice(0, cutSection);
+    } else {
+        const cutLine = head.lastIndexOf('\n\n');
+        if (cutLine > budget * 0.45) {
+            head = head.slice(0, cutLine);
+        }
+    }
+    const omitted = body.length - head.length;
+    return `${head.trimEnd()}\n\n---\n\n_…Truncated ~${omitted} characters for GitHub size / rate limits. Remaining findings may still be stored in your dashboard._`;
+}
+
+function truncateProseForGithubReview(prose: string, maxChars: number): string {
+    if (!prose || prose.length <= maxChars) {
+        return prose;
+    }
+    let head = prose.slice(0, maxChars);
+    const cutSeg = head.lastIndexOf('\n### Segment ');
+    if (cutSeg > maxChars * 0.2) {
+        head = head.slice(0, cutSeg);
+    } else {
+        const nl = head.lastIndexOf('\n\n');
+        if (nl > maxChars * 0.35) {
+            head = head.slice(0, nl);
+        }
+    }
+    const omitted = prose.length - head.length;
+    return `${head.trimEnd()}\n\n---\n\n_Omitted ~${omitted} characters of segment narrative — raise GITHUB_REVIEW_PROSE_MAX_CHARS if you need more on GitHub._`;
+}
+
+function githubReviewBodyOnlyMode(): boolean {
+    const v = process.env.GITHUB_REVIEW_BODY_ONLY?.trim().toLowerCase();
+    return v === '1' || v === 'true' || v === 'yes';
+}
+
+function inlineCommentToOrphan(ic: InlineReviewComment): ReviewBugInput {
+    const start = ic.start_line ?? ic.line;
+    const end = ic.line;
+    return {
+        category: 'review',
+        file: ic.path,
+        lineStart: start,
+        ...(end !== start ? { lineEnd: end } : {}),
+        description: `(Not posted inline — review size cap) ${ic.body.replace(/\s+/g, ' ').trim().slice(0, 800)}`,
+    };
+}
+
+function capInlineReviewComments(
+    inline: InlineReviewComment[],
+    orphans: ReviewBugInput[],
+    maxInline: number,
+): { inline: InlineReviewComment[]; orphans: ReviewBugInput[] } {
+    if (inline.length <= maxInline) {
+        return { inline, orphans };
+    }
+    const kept = inline.slice(0, maxInline);
+    const overflow = inline.slice(maxInline);
+    console.warn(
+        `[review] Capping inline review comments at ${maxInline}; ${overflow.length} moved to PR body table`,
+    );
+    return { inline: kept, orphans: [...orphans, ...overflow.map(inlineCommentToOrphan)] };
+}
+
+function buildSlimGithubReviewBody(options: {
+    enforcementLevel: 'warning' | 'error';
+    mergeRecommended: boolean;
+    overall: number;
+    mergeMinScore: number;
+    data: EnforcerPayload | null;
+    reasons: string[];
+    parseError: string | null;
+    orphanSample: ReviewBugInput[];
+    findingsRecorded: number | null;
+    maxChars: number;
+}): string {
+    const raw = formatEnforcerReviewSummary({
+        enforcementLevel: options.enforcementLevel,
+        mergeRecommended: options.mergeRecommended,
+        overall: options.overall,
+        mergeMinScore: options.mergeMinScore,
+        data: options.data,
+        prose: '**Automated review (abbreviated)** — GitHub limited this post. Use the PFE dashboard for the full narrative, segment output, and all findings.',
+        reasons: options.reasons,
+        parseError: options.parseError,
+        orphanBugs: options.orphanSample,
+        inlineCommentsPosted: 0,
+        findingsRecorded: options.findingsRecorded,
+    });
+    return truncateGithubMarkdownBody(raw, options.maxChars);
+}
 
 function splitUnifiedDiffIntoSegments(diff: string, maxLines: number, maxChars: number): string[] {
     if (!diff.trim()) {
@@ -242,6 +439,10 @@ END_DIFF`;
 
             console.log(`Generating review segment ${k}/${segments.length}...`);
             const segmentText = await runPythonReview(prompt, chunk);
+            const pauseMs = segmentDelayBetweenAiCallsMs();
+            if (pauseMs > 0 && !isLast) {
+                await delayMs(pauseMs);
+            }
             segmentOutputs.push(`### Segment ${k}/${segments.length}\n\n${segmentText.trim()}`);
             const segParsed = parseEnforcerResponse(segmentText);
             if (isLast) {
@@ -343,43 +544,177 @@ END_DIFF`;
         orphanBugs = bugsFromAi;
     }
 
-    const body = formatEnforcerReviewSummary({
+    const inlineCap = envPositiveInt('GITHUB_REVIEW_MAX_INLINE_COMMENTS', DEFAULT_GITHUB_REVIEW_MAX_INLINE_COMMENTS);
+    const cappedInline = capInlineReviewComments(inlineComments, orphanBugs, inlineCap);
+    inlineComments = cappedInline.inline;
+    orphanBugs = cappedInline.orphans;
+
+    if (githubReviewBodyOnlyMode()) {
+        if (inlineComments.length > 0) {
+            console.warn(
+                `[review] GITHUB_REVIEW_BODY_ONLY: merging ${inlineComments.length} inline comment(s) into PR body only`,
+            );
+            orphanBugs = [...orphanBugs, ...inlineComments.map(inlineCommentToOrphan)];
+            inlineComments = [];
+        }
+    }
+
+    const proseSource = parsed.prose || aiReviewText.trim();
+    const proseCap = envPositiveInt(
+        'GITHUB_REVIEW_PROSE_MAX_CHARS',
+        DEFAULT_GITHUB_REVIEW_PROSE_MAX_CHARS,
+    );
+    const proseForGithub = truncateProseForGithubReview(proseSource, proseCap);
+
+    const orphanRowCap = envPositiveInt(
+        'GITHUB_REVIEW_ORPHAN_ROWS_MAX',
+        DEFAULT_GITHUB_REVIEW_ORPHAN_ROWS_MAX,
+    );
+    let orphansForGithubBody = orphanBugs;
+    let orphanRowsOmitted = 0;
+    if (orphanBugs.length > orphanRowCap) {
+        orphanRowsOmitted = orphanBugs.length - orphanRowCap;
+        orphansForGithubBody = orphanBugs.slice(0, orphanRowCap);
+        console.warn(
+            `[review] Orphan findings table capped at ${orphanRowCap} rows for GitHub; ${orphanRowsOmitted} not shown`,
+        );
+    }
+
+    let body = formatEnforcerReviewSummary({
         enforcementLevel: effectiveConfig.enforcementLevel,
         mergeRecommended: Boolean(effectiveData && mergeRecommended),
         overall,
         mergeMinScore: effectiveConfig.mergeMinScore,
         data: effectiveData,
-        prose: parsed.prose || aiReviewText.trim(),
+        prose: proseForGithub,
         reasons,
         parseError,
-        orphanBugs,
+        orphanBugs: orphansForGithubBody,
         inlineCommentsPosted: inlineComments.length,
         findingsRecorded,
     });
 
+    const bodyMaxChars = envPositiveInt(
+        'GITHUB_REVIEW_BODY_MAX_CHARS',
+        DEFAULT_GITHUB_REVIEW_BODY_MAX_CHARS,
+    );
+    if (orphanRowsOmitted > 0) {
+        body = `${body}\n\n_${orphanRowsOmitted} orphan row(s) omitted (GITHUB_REVIEW_ORPHAN_ROWS_MAX=${orphanRowCap}); full list in dashboard._`;
+    }
+    body = truncateGithubMarkdownBody(body, bodyMaxChars);
+
     if (postComment) {
+        const emergencyChars = envPositiveInt(
+            'GITHUB_REVIEW_EMERGENCY_BODY_CHARS',
+            DEFAULT_GITHUB_REVIEW_EMERGENCY_BODY_CHARS,
+        );
+        const slimOrphanRows = envPositiveInt(
+            'GITHUB_REVIEW_SLIM_ORPHAN_ROWS',
+            DEFAULT_GITHUB_REVIEW_SLIM_ORPHAN_ROWS,
+        );
+
+        const postPullsReview = (reviewBody: string, comments?: InlineReviewComment[]) =>
+            runWithGithubContentRetry('pulls.createReview', () =>
+                octokit.rest.pulls.createReview({
+                    owner: repoOwner,
+                    repo: repoName,
+                    pull_number: prNumber,
+                    event: 'COMMENT',
+                    body: reviewBody,
+                    ...(headSha ? { commit_id: headSha } : {}),
+                    ...(comments && comments.length > 0 ? { comments } : {}),
+                }),
+            );
+
+        let postBody = body;
+        let postComments: InlineReviewComment[] | undefined =
+            inlineComments.length > 0 ? inlineComments : undefined;
+
+        if (shouldUsePreemptiveSlimGithubPost(body, inlineComments, process.env)) {
+            console.warn(
+                `[review] Preemptive slim GitHub post (body=${body.length} chars, inline=${inlineComments.length}); expand via dashboard or set GITHUB_REVIEW_PREEMPTIVE_SLIM=false`,
+            );
+            postBody = buildSlimGithubReviewBody({
+                enforcementLevel: effectiveConfig.enforcementLevel,
+                mergeRecommended: Boolean(effectiveData && mergeRecommended),
+                overall,
+                mergeMinScore: effectiveConfig.mergeMinScore,
+                data: effectiveData,
+                reasons,
+                parseError,
+                orphanSample: orphansForGithubBody.slice(0, slimOrphanRows),
+                findingsRecorded,
+                maxChars: emergencyChars,
+            });
+            postComments = undefined;
+        }
+
+        let postedToGithub = false;
         try {
-            const reviewPayload: Parameters<typeof octokit.rest.pulls.createReview>[0] = {
-                owner: repoOwner,
-                repo: repoName,
-                pull_number: prNumber,
-                event: 'COMMENT',
-                body,
-                ...(headSha ? { commit_id: headSha } : {}),
-                ...(inlineComments.length > 0 ? { comments: inlineComments } : {}),
-            };
-            await octokit.rest.pulls.createReview(reviewPayload);
+            await postPullsReview(postBody, postComments);
+            postedToGithub = true;
             console.log(
-                `Review posted to GitHub (${inlineComments.length} inline, ${orphanBugs.length} orphan).`,
+                `Review posted to GitHub (${postComments?.length ?? 0} inline, ${orphanBugs.length} orphan).`,
             );
         } catch (err) {
-            console.error('pulls.createReview failed; falling back to issue comment:', err);
-            await octokit.rest.issues.createComment({
-                owner: repoOwner,
-                repo: repoName,
-                issue_number: prNumber,
-                body,
-            });
+            console.error('pulls.createReview failed:', err);
+            let fallbackCommentBody = truncateGithubMarkdownBody(body, emergencyChars);
+            const rateLimited = isGithubSecondaryOrPrimaryContentLimit(err);
+
+            if (rateLimited) {
+                fallbackCommentBody = buildSlimGithubReviewBody({
+                    enforcementLevel: effectiveConfig.enforcementLevel,
+                    mergeRecommended: Boolean(effectiveData && mergeRecommended),
+                    overall,
+                    mergeMinScore: effectiveConfig.mergeMinScore,
+                    data: effectiveData,
+                    reasons,
+                    parseError,
+                    orphanSample: orphansForGithubBody.slice(0, slimOrphanRows),
+                    findingsRecorded,
+                    maxChars: emergencyChars,
+                });
+                try {
+                    console.warn(
+                        '[review] Retrying pulls.createReview with slim body and no inline (secondary rate limit recovery)',
+                    );
+                    await postPullsReview(fallbackCommentBody, undefined);
+                    postedToGithub = true;
+                    console.log('Review posted to GitHub (slim recovery, 0 inline).');
+                } catch (err2) {
+                    console.error('Slim pulls.createReview failed:', err2);
+                }
+            }
+
+            if (!postedToGithub) {
+                try {
+                    await runWithGithubContentRetry('issues.createComment', () =>
+                        octokit.rest.issues.createComment({
+                            owner: repoOwner,
+                            repo: repoName,
+                            issue_number: prNumber,
+                            body: fallbackCommentBody,
+                        }),
+                    );
+                    console.log('Review posted as issue comment (fallback).');
+                } catch (err3) {
+                    console.error('issues.createComment failed:', err3);
+                    try {
+                        const stub = buildMinimalGithubRateLimitStub(repoFullName, prNumber);
+                        await runWithGithubContentRetry('issues.createComment.stub', () =>
+                            octokit.rest.issues.createComment({
+                                owner: repoOwner,
+                                repo: repoName,
+                                issue_number: prNumber,
+                                body: stub,
+                            }),
+                        );
+                        console.warn('[review] Posted minimal stub comment after repeated GitHub failures.');
+                    } catch (err4) {
+                        console.error('Minimal stub issues.createComment failed:', err4);
+                    }
+                }
+            }
         }
     }
 

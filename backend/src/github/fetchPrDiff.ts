@@ -1,5 +1,8 @@
 import type { Octokit } from 'octokit';
 
+/** Inserted between listFiles/compareCommits patches so filters can split reliably (patches may repeat `--- a/`). */
+export const PFE_CONCAT_FILE_BOUNDARY = '<<<PFE_FILE_BOUNDARY_a9f3e>>>';
+
 export function normalizeDiffPayload(payload: unknown): string {
     if (typeof payload === 'string') {
         return payload.trim();
@@ -78,9 +81,11 @@ async function concatPatchesFromListFiles(
         });
 
         for (const f of data) {
-            if (typeof f.patch === 'string' && f.patch.length > 0) {
-                parts.push(`--- a/${f.filename}\n+++ b/${f.filename}\n${f.patch}`);
+            if (!f.filename || typeof f.patch !== 'string' || f.patch.length === 0) {
+                continue;
             }
+            const chunk = `--- a/${f.filename}\n+++ b/${f.filename}\n${f.patch}`;
+            parts.push(parts.length === 0 ? chunk : `${PFE_CONCAT_FILE_BOUNDARY}${chunk}`);
         }
 
         if (data.length < 100) {
@@ -89,7 +94,7 @@ async function concatPatchesFromListFiles(
         page += 1;
     }
 
-    return parts.join('\n\n').trim();
+    return parts.join('').trim();
 }
 
 async function concatPatchesFromCompare(
@@ -113,11 +118,12 @@ async function concatPatchesFromCompare(
     const parts: string[] = [];
     for (const f of data.files ?? []) {
         if (typeof f.patch === 'string' && f.patch.length > 0 && f.filename) {
-            parts.push(`--- a/${f.filename}\n+++ b/${f.filename}\n${f.patch}`);
+            const chunk = `--- a/${f.filename}\n+++ b/${f.filename}\n${f.patch}`;
+            parts.push(parts.length === 0 ? chunk : `${PFE_CONCAT_FILE_BOUNDARY}${chunk}`);
         }
     }
 
-    return parts.join('\n\n').trim();
+    return parts.join('').trim();
 }
 
 export async function fetchPrDiffString(

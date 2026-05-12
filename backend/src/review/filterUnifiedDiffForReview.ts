@@ -3,24 +3,74 @@
  * Segment explosions usually come from huge generated/lock files; filter those for AI review.
  */
 
+import { PFE_CONCAT_FILE_BOUNDARY } from '../github/fetchPrDiff.js';
+
+/**
+ * Split into per-file hunks.
+ * Standard Git unified diffs use `diff --git`; fallbacks from `pulls.listFiles` / `compareCommits`
+ * (`fetchPrDiff.ts`) join patches as `--- a/path` without `diff --git` — must split on `--- a/` too
+ * or the whole PR becomes one block and filtering keeps only the first path while all bytes remain.
+ */
 function splitUnifiedDiffIntoFileBlocks(diff: string): string[] {
-    if (!diff.trim()) {
+    const trimmed = diff.trim();
+    if (!trimmed) {
         return [];
     }
-    const lines = diff.split(/\r?\n/);
+    if (trimmed.includes(PFE_CONCAT_FILE_BOUNDARY)) {
+        return trimmed
+            .split(PFE_CONCAT_FILE_BOUNDARY)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+    }
+    const lines = trimmed.split(/\r?\n/);
     const blocks: string[][] = [];
     let cur: string[] = [];
-    for (const line of lines) {
-        if (line.startsWith('diff --git ') && cur.length > 0) {
+
+    const flush = (): void => {
+        if (cur.length > 0) {
             blocks.push(cur);
-            cur = [line];
+            cur = [];
+        }
+    };
+
+    /**
+     * `fetchPrDiff` concat format always starts with `--- a/<path>` (no outer `diff --git`).
+     * GitHub's per-file `patch` often *includes* inner `diff --git` lines — if we split only on
+     * those, one logical file breaks into multiple blocks. Prefer outer `--- a/` boundaries first.
+     */
+    const outerPatchFormat = trimmed.startsWith('--- a/');
+
+    const splitOnOuterPatchHeaders = (): void => {
+        for (const line of lines) {
+            if (line.startsWith('--- a/') && cur.length > 0) {
+                flush();
+                cur = [line];
+            } else {
+                cur.push(line);
+            }
+        }
+        flush();
+    };
+
+    if (outerPatchFormat) {
+        splitOnOuterPatchHeaders();
+    } else {
+        const hasGitHeaders = lines.some((l) => l.startsWith('diff --git '));
+        if (hasGitHeaders) {
+            for (const line of lines) {
+                if (line.startsWith('diff --git ') && cur.length > 0) {
+                    flush();
+                    cur = [line];
+                } else {
+                    cur.push(line);
+                }
+            }
+            flush();
         } else {
-            cur.push(line);
+            splitOnOuterPatchHeaders();
         }
     }
-    if (cur.length > 0) {
-        blocks.push(cur);
-    }
+
     return blocks.map((b) => b.join('\n'));
 }
 

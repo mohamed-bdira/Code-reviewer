@@ -11,7 +11,7 @@ import {
     type ReviewBugInput,
 } from '../enforcer/parseEnforcerResponse.js';
 import { upsertPrReviewFindings } from '../findings/upsertPrReviewFindings.js';
-import { fetchPrDiffString } from '../github/fetchPrDiff.js';
+import { fetchPrDiffString, PFE_CONCAT_FILE_BOUNDARY } from '../github/fetchPrDiff.js';
 import { filterUnifiedDiffForAiReview } from './filterUnifiedDiffForReview.js';
 import { bugsToReviewComments, parseDiffHunks, type InlineReviewComment } from '../github/diffHunks.js';
 import type { EffectiveRepoConfig } from './effectiveRepoConfig.js';
@@ -34,6 +34,16 @@ const DIFF_MAX_LINES_PER_SEGMENT = Math.max(
 function segmentDelayBetweenAiCallsMs(): number {
     const n = Number(process.env.AI_REVIEW_SEGMENT_DELAY_MS ?? 0);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/** Cap AI segment passes after filtering. Default 25; set DIFF_REVIEW_MAX_AI_SEGMENTS=0 (or unlimited) to disable. */
+function maxAiSegmentsFromEnv(): number {
+    const raw = process.env.DIFF_REVIEW_MAX_AI_SEGMENTS?.trim();
+    if (raw === undefined || raw === '') return 25;
+    const lower = raw.toLowerCase();
+    if (raw === '0' || lower === 'unlimited' || lower === 'none') return Number.POSITIVE_INFINITY;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 25;
 }
 
 /** GitHub secondary rate limits / abuse heuristics trigger on huge reviews (body + many inline comments). */
@@ -364,14 +374,39 @@ Additional repository rules: ${effectiveConfig.customRules}`;
         hasDiff && diffForAi.trim().length > 0
             ? splitUnifiedDiffIntoSegments(diffForAi, DIFF_MAX_LINES_PER_SEGMENT, DIFF_MAX_FOR_AI)
             : [];
-    const maxSegmentsRaw = process.env.DIFF_REVIEW_MAX_AI_SEGMENTS?.trim();
-    const maxSegments = maxSegmentsRaw ? Number(maxSegmentsRaw) : NaN;
-    if (hasDiff && Number.isFinite(maxSegments) && maxSegments > 0 && segments.length > maxSegments) {
+    const maxSegments = maxAiSegmentsFromEnv();
+    if (hasDiff && Number.isFinite(maxSegments) && segments.length > maxSegments) {
         console.warn(
             `[review] Capping AI segments ${segments.length} → ${maxSegments} (DIFF_REVIEW_MAX_AI_SEGMENTS); remaining diff not sent to the model.`,
         );
         segments = segments.slice(0, maxSegments);
     }
+
+    if (hasDiff && diffForAi.trim().length > 0) {
+        const lineCount = diffForAi.split(/\r?\n/).length;
+        console.log(
+            `[review] AI diff stats: ${lineCount} line(s) → ${segments.length} segment(s); max ${DIFF_MAX_LINES_PER_SEGMENT} lines / ${DIFF_MAX_FOR_AI} chars per chunk`,
+        );
+    }
+
+    // #region agent log
+    if (hasDiff) {
+        console.log(
+            '[review] diff-debug',
+            JSON.stringify({
+                sessionId: '748d0a',
+                hypothesisId: 'H_concat_boundary',
+                rawChars: rawDiff.length,
+                diffForAiChars: diffForAi.length,
+                hasConcatBoundary: rawDiff.includes(PFE_CONCAT_FILE_BOUNDARY),
+                keptFileCount: filterResult?.keptPaths.length ?? 0,
+                skippedFileCount: filterResult?.skippedPaths.length ?? 0,
+                segmentCount: segments.length,
+                prNumber,
+            }),
+        );
+    }
+    // #endregion
 
     let aiReviewText: string;
     let parsed: ParsedEnforcerResult;

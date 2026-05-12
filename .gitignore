@@ -6,3 +6,4 @@ github-app-key.pem
 node_modules/
 __pycache__/
 *.pyc
+package-lock.json

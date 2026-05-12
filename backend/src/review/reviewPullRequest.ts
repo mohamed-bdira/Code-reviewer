@@ -12,6 +12,7 @@ import {
 } from '../enforcer/parseEnforcerResponse.js';
 import { upsertPrReviewFindings } from '../findings/upsertPrReviewFindings.js';
 import { fetchPrDiffString } from '../github/fetchPrDiff.js';
+import { filterUnifiedDiffForAiReview } from './filterUnifiedDiffForReview.js';
 import { bugsToReviewComments, parseDiffHunks, type InlineReviewComment } from '../github/diffHunks.js';
 import type { EffectiveRepoConfig } from './effectiveRepoConfig.js';
 import {
@@ -326,6 +327,23 @@ export async function reviewPullRequest(args: ReviewPullRequestArgs): Promise<Re
         console.warn(`No diff content available for PR #${prNumber}; continuing with metadata-only review.`);
     }
 
+    const filterResult = hasDiff ? filterUnifiedDiffForAiReview(rawDiff, process.env) : null;
+    let diffForAi = filterResult?.filteredDiff ?? '';
+    if (hasDiff && filterResult && filterResult.skippedPaths.length > 0) {
+        console.log(
+            `[review] Excluded ${filterResult.skippedPaths.length} path(s) from AI diff (lockfiles / DIFF_REVIEW_* filters): ${filterResult.skippedPaths.slice(0, 8).join(', ')}${filterResult.skippedPaths.length > 8 ? '…' : ''}`,
+        );
+    }
+    if (hasDiff && diffForAi.trim().length === 0) {
+        console.warn(
+            `[review] Filter removed all file hunks; reviewing full PR diff for AI (adjust DIFF_REVIEW_INCLUDE_PATH_PREFIXES / DIFF_REVIEW_EXCLUDE_PATH_CONTAINS).`,
+        );
+        diffForAi = rawDiff;
+    }
+    if (hasDiff && filterResult && filterResult.keptPaths.length > 0) {
+        console.log(`[review] AI review covers ${filterResult.keptPaths.length} file(s): ${filterResult.keptPaths.slice(0, 12).join(', ')}${filterResult.keptPaths.length > 12 ? '…' : ''}`);
+    }
+
     console.log(`Analyzing PR #${prNumber}: ${prTitle}`);
 
     const scoreDimensions = buildScoreDimensions(effectiveConfig.focusAreas);
@@ -342,9 +360,18 @@ Merge minimum (minimum of section scores must be >= this for a green merge signa
 Use ast-grep signal: ${effectiveConfig.useAstGrep ? 'yes' : 'no'}
 Additional repository rules: ${effectiveConfig.customRules}`;
 
-    const segments = hasDiff
-        ? splitUnifiedDiffIntoSegments(rawDiff, DIFF_MAX_LINES_PER_SEGMENT, DIFF_MAX_FOR_AI)
-        : [];
+    let segments =
+        hasDiff && diffForAi.trim().length > 0
+            ? splitUnifiedDiffIntoSegments(diffForAi, DIFF_MAX_LINES_PER_SEGMENT, DIFF_MAX_FOR_AI)
+            : [];
+    const maxSegmentsRaw = process.env.DIFF_REVIEW_MAX_AI_SEGMENTS?.trim();
+    const maxSegments = maxSegmentsRaw ? Number(maxSegmentsRaw) : NaN;
+    if (hasDiff && Number.isFinite(maxSegments) && maxSegments > 0 && segments.length > maxSegments) {
+        console.warn(
+            `[review] Capping AI segments ${segments.length} → ${maxSegments} (DIFF_REVIEW_MAX_AI_SEGMENTS); remaining diff not sent to the model.`,
+        );
+        segments = segments.slice(0, maxSegments);
+    }
 
     let aiReviewText: string;
     let parsed: ParsedEnforcerResult;

@@ -11,7 +11,7 @@ import { PFE_CONCAT_FILE_BOUNDARY } from '../github/fetchPrDiff.js';
  * (`fetchPrDiff.ts`) join patches as `--- a/path` without `diff --git` — must split on `--- a/` too
  * or the whole PR becomes one block and filtering keeps only the first path while all bytes remain.
  */
-function splitUnifiedDiffIntoFileBlocks(diff: string): string[] {
+export function splitUnifiedDiffIntoFileBlocks(diff: string): string[] {
     const trimmed = diff.trim();
     if (!trimmed) {
         return [];
@@ -74,7 +74,7 @@ function splitUnifiedDiffIntoFileBlocks(diff: string): string[] {
     return blocks.map((b) => b.join('\n'));
 }
 
-/** Repo-relative path on the new side (HEAD), or null for binary/delete-only edge cases. */
+/** Repo-relative path on the new side (HEAD), or null for delete-only (`+++ /dev/null`) edge cases. */
 export function extractNewPathFromDiffBlock(block: string): string | null {
     for (const line of block.split(/\r?\n/)) {
         if (line.startsWith('+++ ')) {
@@ -86,6 +86,91 @@ export function extractNewPathFromDiffBlock(block: string): string | null {
         }
     }
     return null;
+}
+
+/** Repo-relative path on the base side, or null for add-only (`--- /dev/null`) edge cases. */
+export function extractOldPathFromDiffBlock(block: string): string | null {
+    for (const line of block.split(/\r?\n/)) {
+        if (line.startsWith('--- ')) {
+            const after = line.slice(4).trim();
+            if (after === '/dev/null') {
+                return null;
+            }
+            return after.startsWith('a/') ? after.slice(2) : after;
+        }
+    }
+    return null;
+}
+
+function normPath(p: string): string {
+    return p.replace(/\\/g, '/');
+}
+
+function joinUnifiedFileBlocks(blocks: string[], useConcatBoundary: boolean): string {
+    if (blocks.length === 0) {
+        return '';
+    }
+    if (useConcatBoundary) {
+        let out = blocks[0] ?? '';
+        for (let i = 1; i < blocks.length; i += 1) {
+            out += `${PFE_CONCAT_FILE_BOUNDARY}${blocks[i] ?? ''}`;
+        }
+        return out.trim();
+    }
+    return blocks.join('\n\n').trim();
+}
+
+export type RestrictUnifiedDiffToPrPathsResult = {
+    restrictedDiff: string;
+    droppedPaths: string[];
+    droppedUnknownPathBlocks: number;
+};
+
+/**
+ * Keeps only file hunks whose `+++` / `---` paths appear in the PR file allowlist (pulls.listFiles).
+ */
+export function restrictUnifiedDiffToPrPaths(
+    diff: string,
+    allowlist: ReadonlySet<string>,
+): RestrictUnifiedDiffToPrPathsResult {
+    const useConcatBoundary = diff.includes(PFE_CONCAT_FILE_BOUNDARY);
+    const blocks = splitUnifiedDiffIntoFileBlocks(diff);
+    const kept: string[] = [];
+    const droppedPaths: string[] = [];
+    let droppedUnknownPathBlocks = 0;
+
+    for (const block of blocks) {
+        const newPath = extractNewPathFromDiffBlock(block);
+        const oldPath = extractOldPathFromDiffBlock(block);
+        const newNorm = newPath ? normPath(newPath) : '';
+        const oldNorm = oldPath ? normPath(oldPath) : '';
+
+        let allowed = false;
+        if (newNorm && allowlist.has(newNorm)) {
+            allowed = true;
+        }
+        if (!allowed && oldNorm && allowlist.has(oldNorm)) {
+            allowed = true;
+        }
+
+        if (!allowed) {
+            if (newNorm) {
+                droppedPaths.push(newNorm);
+            } else if (oldNorm) {
+                droppedPaths.push(oldNorm);
+            } else {
+                droppedUnknownPathBlocks += 1;
+            }
+        } else {
+            kept.push(block);
+        }
+    }
+
+    return {
+        restrictedDiff: joinUnifiedFileBlocks(kept, useConcatBoundary),
+        droppedPaths,
+        droppedUnknownPathBlocks,
+    };
 }
 
 function parseCommaList(envVal: string | undefined): string[] {

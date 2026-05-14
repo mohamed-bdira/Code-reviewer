@@ -1,3 +1,6 @@
+import { appendFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import mongoose from 'mongoose';
 import type { Octokit } from 'octokit';
 import {
@@ -11,8 +14,8 @@ import {
     type ReviewBugInput,
 } from '../enforcer/parseEnforcerResponse.js';
 import { upsertPrReviewFindings } from '../findings/upsertPrReviewFindings.js';
-import { fetchPrDiffString, PFE_CONCAT_FILE_BOUNDARY } from '../github/fetchPrDiff.js';
-import { filterUnifiedDiffForAiReview } from './filterUnifiedDiffForReview.js';
+import { fetchPrDiffString, fetchPullRequestChangedPaths, PFE_CONCAT_FILE_BOUNDARY } from '../github/fetchPrDiff.js';
+import { filterUnifiedDiffForAiReview, restrictUnifiedDiffToPrPaths } from './filterUnifiedDiffForReview.js';
 import { bugsToReviewComments, parseDiffHunks, type InlineReviewComment } from '../github/diffHunks.js';
 import type { EffectiveRepoConfig } from './effectiveRepoConfig.js';
 import {
@@ -20,6 +23,18 @@ import {
     shouldUsePreemptiveSlimGithubPost,
 } from './githubPostingStrategy.js';
 import { delayMs, runPythonReview } from './pythonReview.js';
+
+/** Workspace-root NDJSON log (debug session); path from …/backend/src/review → repo root `pfe/`. */
+const _reviewPullRequestDir = dirname(fileURLToPath(import.meta.url));
+const DEBUG_NDJSON_LOG = join(_reviewPullRequestDir, '..', '..', '..', '..', 'debug-748d0a.log');
+
+function appendDebugNdjson(payload: Record<string, unknown>): void {
+    try {
+        appendFileSync(DEBUG_NDJSON_LOG, `${JSON.stringify(payload)}\n`, { encoding: 'utf8' });
+    } catch {
+        /* debug-only */
+    }
+}
 
 /** Max characters of unified diff per AI segment (prompt + subprocess budget). */
 const DIFF_MAX_FOR_AI = 10_000;
@@ -331,24 +346,53 @@ export async function reviewPullRequest(args: ReviewPullRequestArgs): Promise<Re
     } = args;
 
     console.log(`Downloading code diffs from Github (${repoFullName}#${prNumber})...`);
-    const rawDiff = await fetchPrDiffString(octokit, repoOwner, repoName, prNumber, baseSha, headSha);
+    const diffP = fetchPrDiffString(octokit, repoOwner, repoName, prNumber, baseSha, headSha);
+    const pathsP = fetchPullRequestChangedPaths(octokit, repoOwner, repoName, prNumber).catch((e: unknown) => {
+        console.warn(
+            `[review] pulls.listFiles failed for PR allowlist (${repoFullName}#${prNumber}): ${githubErrorText(e)}. Reviews proceed without path allowlist.`,
+        );
+        return null as Set<string> | null;
+    });
+    const [rawDiff, prFilePaths] = await Promise.all([diffP, pathsP]);
+
+    let diffAfterAllowlist = rawDiff;
+    if (rawDiff.trim().length > 0 && prFilePaths !== null && prFilePaths.size > 0) {
+        const restricted = restrictUnifiedDiffToPrPaths(rawDiff, prFilePaths);
+        diffAfterAllowlist = restricted.restrictedDiff;
+        if (restricted.droppedPaths.length > 0 || restricted.droppedUnknownPathBlocks > 0) {
+            const sample = restricted.droppedPaths.slice(0, 8).join(', ');
+            console.warn(
+                `[review] Dropped ${restricted.droppedPaths.length} diff block(s) not in pulls.listFiles (${restricted.droppedUnknownPathBlocks} unknown-path block(s)): ${sample}${restricted.droppedPaths.length > 8 ? '…' : ''}`,
+            );
+        }
+        if (diffAfterAllowlist.trim().length === 0 && rawDiff.trim().length > 0) {
+            console.warn(
+                `[review] Path allowlist removed all diff hunks; continuing with metadata-only review for diff-backed AI (unexpected vs GitHub API).`,
+            );
+        }
+    }
+
     const hasDiff = rawDiff.trim().length > 0;
     if (!hasDiff) {
         console.warn(`No diff content available for PR #${prNumber}; continuing with metadata-only review.`);
     }
 
-    const filterResult = hasDiff ? filterUnifiedDiffForAiReview(rawDiff, process.env) : null;
+    const filterResult = hasDiff ? filterUnifiedDiffForAiReview(diffAfterAllowlist, process.env) : null;
     let diffForAi = filterResult?.filteredDiff ?? '';
     if (hasDiff && filterResult && filterResult.skippedPaths.length > 0) {
         console.log(
             `[review] Excluded ${filterResult.skippedPaths.length} path(s) from AI diff (lockfiles / DIFF_REVIEW_* filters): ${filterResult.skippedPaths.slice(0, 8).join(', ')}${filterResult.skippedPaths.length > 8 ? '…' : ''}`,
         );
     }
-    if (hasDiff && diffForAi.trim().length === 0) {
+    if (hasDiff && diffForAi.trim().length === 0 && diffAfterAllowlist.trim().length > 0) {
         console.warn(
-            `[review] Filter removed all file hunks; reviewing full PR diff for AI (adjust DIFF_REVIEW_INCLUDE_PATH_PREFIXES / DIFF_REVIEW_EXCLUDE_PATH_CONTAINS).`,
+            `[review] Filter removed all file hunks; using PR-scoped diff without lockfile/prefix filters for AI (adjust DIFF_REVIEW_INCLUDE_PATH_PREFIXES / DIFF_REVIEW_EXCLUDE_PATH_CONTAINS).`,
         );
-        diffForAi = rawDiff;
+        diffForAi = diffAfterAllowlist;
+    } else if (hasDiff && diffForAi.trim().length === 0 && diffAfterAllowlist.trim().length === 0) {
+        console.warn(
+            `[review] No unified diff left for AI after allowlist + filters (metadata-only review for diff context).`,
+        );
     }
     if (hasDiff && filterResult && filterResult.keptPaths.length > 0) {
         console.log(`[review] AI review covers ${filterResult.keptPaths.length} file(s): ${filterResult.keptPaths.slice(0, 12).join(', ')}${filterResult.keptPaths.length > 12 ? '…' : ''}`);
@@ -391,31 +435,38 @@ Additional repository rules: ${effectiveConfig.customRules}`;
 
     // #region agent log
     if (hasDiff) {
-        console.log(
-            '[review] diff-debug',
-            JSON.stringify({
-                sessionId: '748d0a',
-                hypothesisId: 'H_concat_boundary',
-                rawChars: rawDiff.length,
-                diffForAiChars: diffForAi.length,
-                hasConcatBoundary: rawDiff.includes(PFE_CONCAT_FILE_BOUNDARY),
-                keptFileCount: filterResult?.keptPaths.length ?? 0,
-                skippedFileCount: filterResult?.skippedPaths.length ?? 0,
-                segmentCount: segments.length,
-                prNumber,
-            }),
-        );
+        const dbg = {
+            sessionId: '748d0a',
+            hypothesisId: 'H_concat_boundary',
+            location: 'reviewPullRequest.ts:post-segment',
+            rawChars: rawDiff.length,
+            diffForAiChars: diffForAi.length,
+            hasConcatBoundary: rawDiff.includes(PFE_CONCAT_FILE_BOUNDARY),
+            keptFileCount: filterResult?.keptPaths.length ?? 0,
+            skippedFileCount: filterResult?.skippedPaths.length ?? 0,
+            segmentCount: segments.length,
+            maxSegmentsResolved: Number.isFinite(maxSegments) ? maxSegments : null,
+            diffReviewMaxAiSegmentsEnv: process.env.DIFF_REVIEW_MAX_AI_SEGMENTS ?? '(unset)',
+            prNumber,
+            timestamp: Date.now(),
+        };
+        console.log('[review] diff-debug', JSON.stringify(dbg));
+        appendDebugNdjson(dbg);
     }
     // #endregion
 
     let aiReviewText: string;
     let parsed: ParsedEnforcerResult;
 
-    if (!hasDiff) {
+    if (!hasDiff || diffForAi.trim().length === 0) {
+        const noDiffReason =
+            !hasDiff
+                ? 'The code diff was not available'
+                : 'The unified diff was empty after PR path allowlist and DIFF_REVIEW_* filters — review from metadata only';
         const prompt = `${sharedHeader}
 Diff status: missing
 
-Provide a detailed, actionable review (architecture, edge cases, security, tone professional). The code diff was not available — review from title/description and general best practices only.
+Provide a detailed, actionable review (architecture, edge cases, security, tone professional). ${noDiffReason}. Review from title/description and general best practices only.
 
 After your narrative review, output exactly one JSON object in a fenced code block with language tag json. Use these keys:
 - "scores": object whose keys are exactly these section names (lowercase): ${dimensionsList.split(', ').map((s) => `"${s}"`).join(', ')}. Each value is an integer from 0 to 100.
@@ -428,7 +479,9 @@ Do not put any text after the closing \`\`\` of that JSON block.
 BEGIN_DIFF
 [No diff content returned by GitHub API]
 END_DIFF`;
-        console.log('Generating review with AI (no diff)...');
+        console.log(
+            !hasDiff ? 'Generating review with AI (no diff)...' : 'Generating review with AI (no diff after filters)...',
+        );
         aiReviewText = await runPythonReview(prompt, '');
         parsed = parseEnforcerResponse(aiReviewText);
     } else if (segments.length === 1) {
@@ -596,7 +649,13 @@ END_DIFF`;
         }
     }
 
-    const hunks = parseDiffHunks(rawDiff);
+    const hunksSource =
+        diffForAi.trim().length > 0
+            ? diffForAi
+            : diffAfterAllowlist.trim().length > 0
+              ? diffAfterAllowlist
+              : rawDiff;
+    const hunks = parseDiffHunks(hunksSource);
     let { inline: inlineComments, orphans: orphanBugs } = bugsToReviewComments(bugsFromAi, hunks);
     if (inlineComments.length > 0 && !headSha) {
         console.warn(

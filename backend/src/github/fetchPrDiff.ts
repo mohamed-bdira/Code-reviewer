@@ -126,6 +126,46 @@ async function concatPatchesFromCompare(
     return parts.join('').trim();
 }
 
+/**
+ * Authoritative repo-relative paths for this PR (GitHub `pulls.listFiles`).
+ * Includes `previous_filename` for renames so diff hunks referencing either side match.
+ */
+export async function fetchPullRequestChangedPaths(
+    octokit: Octokit,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+): Promise<Set<string>> {
+    const paths = new Set<string>();
+    let page = 1;
+
+    while (true) {
+        const { data } = await octokit.rest.pulls.listFiles({
+            owner,
+            repo,
+            pull_number: pullNumber,
+            per_page: 100,
+            page,
+        });
+
+        for (const f of data) {
+            if (f.filename) {
+                paths.add(f.filename.replace(/\\/g, '/'));
+            }
+            if (f.previous_filename) {
+                paths.add(f.previous_filename.replace(/\\/g, '/'));
+            }
+        }
+
+        if (data.length < 100) {
+            break;
+        }
+        page += 1;
+    }
+
+    return paths;
+}
+
 export async function fetchPrDiffString(
     octokit: Octokit,
     owner: string,

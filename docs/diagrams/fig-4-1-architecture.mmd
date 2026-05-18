@@ -1,0 +1,22 @@
+flowchart TB
+  subgraph client [Browser]
+    SPA[React SPA Vite]
+  end
+  subgraph server [Node process]
+    API[Express API]
+    SCH[Bug scan scheduler]
+    RPR[reviewPullRequest]
+  end
+  DB[(MongoDB)]
+  GH[GitHub APIs and Webhooks]
+  PY[pythonExploit.py]
+  GEM[Gemini stream endpoint]
+  SPA <-->|HTTPS JSON| API
+  API <-->|Mongoose| DB
+  GH -->|Webhooks| API
+  API -->|invoke| RPR
+  SCH -->|periodic invoke| RPR
+  RPR <-->|REST| GH
+  RPR <-->|Mongoose| DB
+  RPR -->|spawn| PY
+  PY <-->|HTTPS| GEM

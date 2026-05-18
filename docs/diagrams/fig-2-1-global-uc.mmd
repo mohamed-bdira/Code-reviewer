@@ -1,0 +1,20 @@
+flowchart TB
+  user((Platform user))
+  gh[[GitHub]]
+  subgraph system [PFE review platform]
+    UC1[Register / Sign in]
+    UC2[Link GitHub App installation]
+    UC3[Configure repository policy]
+    UC4[Manage API keys]
+    UC5[View findings and dashboard]
+    UC6[Receive PR webhooks and run AI review]
+  end
+  user --> UC1
+  user --> UC2
+  user --> UC3
+  user --> UC4
+  user --> UC5
+  gh --> UC6
+  UC6 --> gh
+  UC2 --> gh
+  UC3 --> gh

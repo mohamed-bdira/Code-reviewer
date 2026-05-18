@@ -1,0 +1,1157 @@
+\documentclass[11pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{caption}
+\hypersetup{colorlinks=true, breaklinks=true,
+  linkcolor=blue, urlcolor=blue, citecolor=blue}
+\usepackage{listings}
+\lstdefinestyle{mdiag}{basicstyle=\ttfamily\footnotesize,breaklines=true,frame=single,
+  backgroundcolor=\color{gray!10}}
+\lstset{style=mdiag}
+\newcommand{\ph}[1]{\textit{\textcolor{gray}{#1}}}
+
+\begin{document}
+
+\begin{titlepage}
+\centering\vspace*{2cm}
+{\Large\bfseries Final Year Project Report\par}
+\vspace{0.75cm}
+{\LARGE\bfseries AI-Assisted GitHub Pull Request Review Platform\par}
+\vspace{2cm}
+\begin{tabular}{rl}
+Working title: & \ph{Insert official title} \\
+Author: & \ph{Your full name} \\
+Supervisor: & \ph{Supervisor} \\
+Institution: & \ph{University} \\
+Host org.: & \ph{Company} \\
+Degree: & \ph{Program} \\
+Period: & \ph{Academic year} \\
+\end{tabular}
+\vfill
+\end{titlepage}
+
+\pagenumbering{roman}
+\tableofcontents
+\listoffigures
+\listoftables
+\clearpage
+\pagenumbering{arabic}
+
+\chapter*{List of Acronyms}
+\addcontentsline{toc}{chapter}{List of Acronyms}
+\noindent\textbf{API} --- Application Programming Interface\par\smallskip
+\noindent\textbf{AST} --- Abstract Syntax Tree\par\smallskip
+\noindent\textbf{CI/CD} --- Continuous Integration / Continuous Delivery\par\smallskip
+\noindent\textbf{CORS} --- Cross-Origin Resource Sharing\par\smallskip
+\noindent\textbf{CRUD} --- Create, Read, Update, Delete\par\smallskip
+\noindent\textbf{GUI} --- Graphical User Interface\par\smallskip
+\noindent\textbf{HMAC} --- Hash-based Message Authentication Code\par\smallskip
+\noindent\textbf{HTTP} --- Hypertext Transfer Protocol\par\smallskip
+\noindent\textbf{IT} --- Information Technology\par\smallskip
+\noindent\textbf{JWT} --- JSON Web Token\par\smallskip
+\noindent\textbf{LLM} --- Large Language Model\par\smallskip
+\noindent\textbf{NPM} --- Node Package Manager (ecosystem)\par\smallskip
+\noindent\textbf{OAuth} --- Open Authorization\par\smallskip
+\noindent\textbf{ORM} --- Object-Relational Mapping (here: ODM with Mongoose)\par\smallskip
+\noindent\textbf{PR} --- Pull Request\par\smallskip
+\noindent\textbf{REST} --- Representational State Transfer\par\smallskip
+\noindent\textbf{SHA} --- Secure Hash Algorithm\par\smallskip
+\noindent\textbf{SPA} --- Single-Page Application\par\smallskip
+\noindent\textbf{SSE} --- Server-Sent Events\par\smallskip
+\noindent\textbf{UI} --- User Interface\par\smallskip
+\noindent\textbf{URI} --- Uniform Resource Identifier\par\smallskip
+
+\chapter*{General Introduction}
+\addcontentsline{toc}{chapter}{General Introduction}
+
+
+Software engineering teams increasingly depend on \textbf{pull requests} to integrate contributions safely. Peer \textbf{code review} remains one of the most effective quality gates, yet it scales poorly with repository activity: reviewers face fatigue, uneven standards, and delays in providing feedback on large diffs. \textbf{Large language models} can assist by summarizing changes and flagging suspected defects, but their outputs are \textbf{probabilistic} and must be integrated with care into real \textbf{GitHub} workflows, with \textbf{traceable} results for operators.
+
+
+The present work documents the design and realization of a \textbf{full-stack platform} (hereinafter the \textbf{PFE review platform}, matching the project repository and application title \textit{PFE — Review findings}) that:
+
+
+\begin{itemize}
+\item connects operator accounts to \textbf{GitHub} through \textbf{OAuth} and links a \textbf{GitHub App installation} to each user;
+\item receives \textbf{\texttt{pull\_request}} webhooks for \textbf{\texttt{opened}} and \textbf{\texttt{synchronize}} events and runs an \textbf{automated, AI-assisted review} of the patch;
+\item uses a \textbf{Python subprocess} to invoke \textbf{Google Gemini} through the \textbf{stream endpoint} implemented in the project script (not framed as a formal Google Cloud SDK product integration);
+\item \textbf{persists} structured \textbf{findings} in \textbf{MongoDB} and exposes them through a \textbf{React} dashboard alongside configuration, scheduling, and \textbf{API key} management;
+\item optionally runs a \textbf{scheduled re-scan} of open pull requests per configured repository;
+\item applies \textbf{operational safeguards} for \textbf{webhook authenticity}, \textbf{CORS}, \textbf{JWT} sessions, and \textbf{GitHub posting} size and rate-limit pressure.
+\end{itemize}
+
+
+\textbf{Guiding research question.} \textit{How can an AI-assisted pull-request review service be integrated into a GitHub-centric workflow so that reviews are event-driven, configurable per repository, auditable through persisted findings, and sustainable under GitHub and model-provider constraints?}
+
+
+\textbf{Objectives} aligned with the implementation include:
+
+
+\begin{itemize}
+\item Provide \textbf{secure authentication} (email/password registration and login, \textbf{GitHub OAuth} with \textbf{JWT} sessions).
+\item \textbf{Link} each user to one or more \textbf{GitHub App installations} and \textbf{repository configurations} (\texttt{RepoConfig}).
+\item \textbf{Automate review} on relevant PR events with \textbf{diff filtering}, \textbf{segmentation} for large patches, and \textbf{structured parsing} of model output.
+\item Offer a \textbf{dashboard} (Overview, GitHub and CI, Configurations, Scheduled scan, AI and Python, Bug findings, API keys).
+\item Support \textbf{optional} gating of reviews on stored \textbf{API keys} when \texttt{REQUIRE\_API\_KEY\_FOR\_REVIEWS} is enabled.
+\item Document \textbf{limitations}: reliance on the \textbf{Gemini web bridge}, \textbf{hallucination risk}, and \textbf{GitHub API} quotas.
+\end{itemize}
+
+
+\textbf{Report structure.} \textit{Chapter 1} situates the project, states the problem, surveys existing practice, and presents the proposed solution and methodology. \textit{Chapter 2} specifies actors, functional and non-functional requirements, and models interaction with use case and sequence diagrams. \textit{Chapter 3} reviews background concepts and related work. \textit{Chapter 4} describes architecture and data design. \textit{Chapter 5} summarizes implementation and evaluation. A \textbf{general conclusion} closes the document.
+
+
+
+\chapter{1 General context}
+
+
+\section{1.1 Introduction}
+
+
+This chapter establishes the \textbf{professional and technical context} of the project, introduces the \textbf{host organization} (placeholder), formalizes the \textbf{problem statement}, reviews \textbf{existing approaches} to pull-request review and automation, presents the \textbf{PFE review platform} as the proposed response, and explains the \textbf{iterative methodological approach} adopted during development.
+
+
+The work is anchored in a concrete implementation: a \textbf{browser dashboard} titled \textit{PFE — Review findings} (\texttt{frontend/index.html}), a \textbf{Node.js} service defaulting to port \textbf{3001} (\texttt{process.env.PORT ?? 3001} in \texttt{server.ts}), and a \textbf{MongoDB} deployment accessed through \textbf{Mongoose}. Terminology in the rest of this document matches those modules and environment variable names so that reviewers can trace claims back to the repository.
+
+
+\section{1.2 Project framework}
+
+
+This final-year project is carried out as part of \textbf{[degree requirements — insert official text]} at \textbf{[institution name]}, hosted at \textbf{[company or laboratory name]}. The internship situates the student in a professional setting while delivering an integration that is realistic for industry: \textbf{GitHub’s} dual model of \textbf{OAuth users} versus \textbf{GitHub App installations}, \textbf{signed webhooks}, and \textbf{installation-scoped} API tokens (Octokit \texttt{getInstallationOctokit}).
+
+
+From a delivery perspective, the stack separates concerns as follows:
+
+
+\begin{itemize}
+\item \textbf{Presentation layer:} a \textbf{Vite}-built \textbf{React 19} SPA, served in development typically on \textbf{\url{http://localhost:5173},} configured as the \textbf{sole CORS origin} unless overridden (\texttt{FRONTEND\_BASE\_URL} in \texttt{server.ts}).
+\item \textbf{Application layer:} \textbf{Express 5} with JSON routers for operators and a \textbf{dedicated raw-body} handler for \texttt{POST /api/webhooks/github} so that \textbf{HMAC-SHA256} validation (\texttt{verifyGithubSignature256} in \texttt{githubWebhook.ts}) can use the exact bytes GitHub signed.
+\item \textbf{Persistence:} \textbf{MongoDB} via \textbf{Mongoose 9}, with explicit indexes on \texttt{RepoConfig} (e.g. unique \texttt{(userId, repoFullName)}) and sparse unique \texttt{dedupeKey} on \texttt{PrReviewFinding} to avoid duplicate findings rows.
+\end{itemize}
+
+
+\section{1.3 Presentation of the host organization}
+
+
+\textbf{[Host organization name]} is \textbf{[insert short description: sector, size, main activities]}. The organization \textbf{[describe relevance to software engineering, DevOps, or cloud services]}. Figure 1.1 is reserved for its \textbf{logo} or institutional identifier once publication rights are confirmed.
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 1.1: [Placeholder] Logo or visual identity of the host organization.
+\vspace{1.2cm}}}
+\caption{[Placeholder] Logo or visual identity of the host organization.}
+\end{figure}
+
+
+\section{1.4 Problem statement}
+
+
+\textbf{Operational pressure on human reviewers.} On GitHub, a \textbf{pull request} concentrates discussion, automation checks, and merge policy in one place. When many PRs arrive in parallel—feature work, dependency bumps, hotfixes—teams experience queueing: authors wait for first-pass feedback, reviewers context-switch across unrelated codebases, and \textbf{large unified diffs} are cognitively expensive to read end-to-end. The cost is not only calendar time; it is also \textbf{inconsistency} in how strictly security, style, or API-contract issues are enforced.
+
+
+\textbf{Limits of CI-only automation.} Continuous integration excels at \textbf{deterministic} signals (tests, compilers, many linters). It does not always produce \textbf{natural-language explanations} tied to specific hunks, nor does it automatically maintain a \textbf{tenant-specific policy} object per repository in a \textbf{first-party} datastore. Teams still need a human-readable layer on the PR that summarizes risk and suggests fixes.
+
+
+\textbf{Opportunity and risk of LLMs.} Large language models can reason about \textbf{partial diffs} and free-text PR titles or descriptions, but they are \textbf{nondeterministic} and may \textbf{hallucinate} defects. Any serious design must therefore combine: (i) \textbf{preprocessing} (filtering noise from the diff sent to the model), (ii) \textbf{bounded invocations} (segmentation, timeouts, optional inter-segment delay and retries), (iii) \textbf{structured parsing} of model output before posting to GitHub, and (iv) \textbf{persistent findings} so operators can audit what the automation claimed—this project stores them in \textbf{\texttt{PrReviewFinding}} with optional \textbf{\texttt{dedupeKey}} for idempotent upserts.
+
+
+\textbf{Problem summary.} The project targets the following concrete need: \textbf{event-driven}, \textbf{installation-aware}, \textbf{per-repository configurable} assistance for GitHub pull requests, with \textbf{auditable} stored findings and \textbf{defensive} GitHub posting behavior, without replacing human merge authority.
+
+
+\section{1.5 Study of the existing system}
+
+
+\subsection{1.5.1 Manual review and informal tooling}
+
+
+\begin{itemize}
+\item \textbf{Peer review on GitHub} remains the canonical quality gate. Review threads capture intent, questions, and approvals; \textbf{CODEOWNERS} and branch protection add policy. These mechanisms do not reduce the \textbf{human time} required to produce the first detailed comment on a ten-thousand-line change.
+\item \textbf{Editor-integrated diagnostics} (language servers, formatters) shorten local feedback loops but live \textbf{outside} the PR record unless authors manually paste or fix. There is no cross-PR \textbf{operator console} unless the organization builds one.
+\item \textbf{Chat-based AI} detached from GitHub can suggest refactors but lacks \textbf{binding} to the exact \textbf{\texttt{opened} / \texttt{synchronize}} lifecycle of a PR and may not respect org secrets or posting etiquette on the official thread.
+\end{itemize}
+
+
+\subsection{1.5.2 Platform-integrated and third-party automation}
+
+
+\begin{itemize}
+\item \textbf{GitHub Actions} and other CI systems can run static analyzers and post annotations. They are strong for \textbf{gates} but are a different product shape from a \textbf{long-lived} dashboard that centralizes \textbf{installations}, \textbf{repo policy} (\texttt{RepoConfig}), and \textbf{findings} filtered per authenticated user (\texttt{matchFindingsVisibleToUser} in \texttt{findingVisibility.ts}).
+\item \textbf{GitHub-native or third-party AI offerings} (exact names evolve) often assume vendor hosting and pricing. This repository instead implements a \textbf{transparent} Node service plus a \textbf{Python} script that calls \textbf{Gemini’s stream endpoint} (\texttt{pythonExploit.py}), which is important for academic disclosure: it is \textbf{not} described here as an official \textbf{Google Cloud Vertex AI} integration unless the codebase is later changed to use that SDK.
+\item \textbf{IDE copilots} target authoring-time assistance; they complement but do not replace \textbf{server-side} review triggered when collaborators open PRs on repositories where the \textbf{GitHub App} is installed.
+\end{itemize}
+
+
+\subsection{1.5.3 Gap identification}
+
+
+The analysis highlights a \textbf{gap} between three partial solutions: (1) \textbf{manual} review only, (2) \textbf{deterministic CI} only, and (3) \textbf{detached LLM chat} only. None of the three, alone, provides:
+
+
+\begin{itemize}
+\item \textbf{Webhook-accurate} triggers limited to \textbf{\texttt{pull\_request}} actions \textbf{\texttt{opened}} and \textbf{\texttt{synchronize}} as implemented in \texttt{server.ts};
+\item \textbf{Multi-tenant} linkage of a \textbf{\texttt{userId}} to numeric \textbf{\texttt{installationId}} strings and \textbf{\texttt{repoFullName}} keys in MongoDB;
+\item \textbf{Structured persistence} of review items with \textbf{visibility rules} that merge \textbf{user-scoped} documents with legacy rows missing \texttt{userId} but matching the user’s configured repos;
+\item \textbf{Operator-facing} panels mirroring the SPA routing table in \textbf{\texttt{DashboardApp.tsx}}: Overview, GitHub and CI, Configurations, Scheduled scan, AI and Python, Bug findings, API keys.
+\end{itemize}
+
+
+\subsection{1.5.4 Critique of existing approaches}
+
+
+\textbf{Manual-only} workflows scale poorly and unevenly. \textbf{LLM-only} workflows without \textbf{payload discipline} risk \textbf{HTTP 403} responses related to \textbf{secondary rate limits} or oversize review bodies on busy repositories—the implemented code paths include \textbf{environment-driven caps} (e.g. \texttt{GITHUB\_REVIEW\_BODY\_MAX\_CHARS}, \texttt{GITHUB\_REVIEW\_MAX\_INLINE\_COMMENTS}) and \textbf{slim posting} logic (\texttt{githubPostingStrategy.ts}, exercised in \texttt{githubPostingStrategy.test.ts}). \textbf{SaaS-only} bots reduce operational burden but may not match a thesis goal of \textbf{inspectable} source and \textbf{self-hosted} data in \textbf{MongoDB}.
+
+
+The \textbf{PFE review platform} is positioned as an \textbf{integrated} response: human authority remains, CI can continue unchanged, and the service adds \textbf{assistive} commentary plus an \textbf{auditing trail} in the database.
+
+
+\section{1.6 Proposed solution}
+
+
+The \textbf{PFE review platform} is a \textbf{full-stack web application} whose behavior is summarized below with direct ties to filenames in the repository.
+
+
+\subsection{1.6.1 Client application (React SPA)}
+
+
+The SPA uses \textbf{React Router} with authenticated routes wrapped in \textbf{\texttt{AuthProvider}}, \textbf{\texttt{RequireAuth}}, and \textbf{\texttt{DashboardUnlockGate}} (\texttt{frontend/src/App.tsx}). The dashboard exposes seven \textbf{sections} with stable paths: \textbf{\texttt{/}} (Overview), \textbf{\texttt{/github}}, \textbf{\texttt{/configurations}}, \textbf{\texttt{/schedule}}, \textbf{\texttt{/ai}}, \textbf{\texttt{/findings}}, \textbf{\texttt{/keys}} (\texttt{DashboardApp.tsx}). Pages exist for \textbf{login}, \textbf{register}, and \textbf{\texttt{/auth/finish}} after OAuth-style flows.
+
+
+\subsection{1.6.2 GitHub integration and webhooks}
+
+
+\begin{itemize}
+\item \textbf{GitHub App:} environment variables \textbf{\texttt{GITHUB\_APP\_ID}}, private key material (\texttt{GITHUB\_APP\_PRIVATE\_KEY} or path), and optional \textbf{\texttt{GITHUB\_APP\_SLUG}} / \textbf{\texttt{GITHUB\_APP\_INSTALL\_URL}} support building the “install new app” URL with a signed \textbf{\texttt{state}} tying the flow to the logged-in user (\texttt{installations.ts} / \texttt{buildGithubNewInstallUrl}). \textbf{\texttt{POST /api/installations}} accepts a numeric \textbf{\texttt{installationId}} string, calls \textbf{\texttt{apps.getInstallation}} via \textbf{\texttt{getAppOctokit}}, and upserts an \textbf{\texttt{Installation}} document; a \textbf{409} error prevents one installation from being claimed by two accounts.
+\item \textbf{OAuth (user identity):} separate from the App, using \textbf{\texttt{GITHUB\_OAUTH\_CLIENT\_ID}} and \textbf{\texttt{GITHUB\_OAUTH\_CLIENT\_SECRET}}. Routes under \textbf{\texttt{/api/auth/github/start}} and \textbf{\texttt{/api/auth/github/callback}} (mounted under \textbf{\texttt{/api/auth}}) perform the authorization-code exchange; callback \textbf{\texttt{redirect\_uri}} is built from \textbf{\texttt{OAUTH\_CALLBACK\_BASE\_URL}}.
+\item \textbf{Webhooks:} \texttt{POST /api/webhooks/github} uses \textbf{\texttt{express.raw(\{ type: 'application/json' \})}}. If \textbf{\texttt{GITHUB\_WEBHOOK\_SECRET}} is unset, signatures are \textbf{not} verified (convenient for local experiments but \textbf{unsafe} in production). For \textbf{\texttt{x-github-event: pull\_request}}, only \textbf{\texttt{action}} \textbf{\texttt{opened}} or \textbf{\texttt{synchronize}} continues; other actions return early. \textbf{Missing \texttt{installation.id}} in the payload triggers a fallback \textbf{\texttt{apps.getRepoInstallation}} when possible. If no \textbf{\texttt{Installation}} row exists for that installation, the handler logs and \textbf{skips}—reviews never run for unknown tenants.
+\end{itemize}
+
+
+\subsection{1.6.3 Review pipeline (AI-assisted)}
+
+
+After webhook validation and \textbf{optional \texttt{userHasActiveApiKey}} gating when \textbf{\texttt{REQUIRE\_API\_KEY\_FOR\_REVIEWS=true}}, the handler ensures a \textbf{\texttt{RepoConfig}} exists (creating or updating \textbf{\texttt{installationId}}), computes \textbf{\texttt{getEffectiveRepoConfig} defaults}, obtains \textbf{\texttt{getInstallationOctokit(installationId)}}, and awaits \textbf{\texttt{reviewPullRequest}}.
+
+
+Inside \textbf{\texttt{reviewPullRequest.ts}} (high level, as implemented): the service fetches PR diff text via \textbf{\texttt{fetchPrDiffString}} / changed paths, \textbf{filters} the unified diff for AI consumption (\textbf{\texttt{filterUnifiedDiffForAiReview}}), splits oversized diffs into \textbf{segments} (character budget \textbf{\texttt{DIFF\_MAX\_FOR\_AI}} and line budget from \textbf{\texttt{DIFF\_REVIEW\_MAX\_LINES\_PER\_SEGMENT}}, with optional env \textbf{\texttt{DIFF\_REVIEW\_MAX\_AI\_SEGMENTS}}), and calls \textbf{\texttt{runPythonReview}}, which spawns \textbf{\texttt{PYTHON\_BIN}} against \textbf{\texttt{PYTHON\_SCRIPT\_PATH}} or the bundled \textbf{\texttt{scripts/pythonExploit.py}}. The child process receives \textbf{JSON on stdin} with \textbf{\texttt{prompt}} and \textbf{\texttt{diff}} fields. \textbf{\texttt{runPythonReview}} retries on likely \textbf{429/502/503/504 / rate-limit} messages according to \textbf{\texttt{AI\_REVIEW\_RETRY\_MAX}} and \textbf{\texttt{AI\_REVIEW\_RETRY\_BASE\_MS}}. Parsed results feed \textbf{\texttt{upsertPrReviewFindings}} and optional GitHub review submission.
+
+
+\subsection{1.6.4 Persistence and visibility}
+
+
+\textbf{MongoDB collections} include \textbf{\texttt{User}}, \textbf{\texttt{Installation}}, \textbf{\texttt{RepoConfig}}, \textbf{\texttt{ApiKey}}, and \textbf{\texttt{PrReviewFinding}}. Findings list endpoints (\texttt{findings.ts}) apply \textbf{\texttt{matchFindingsVisibleToUser}}: the user sees documents whose \textbf{\texttt{userId}} matches, \textbf{or} legacy rows with \textbf{no \texttt{userId}} but \textbf{\texttt{repoFullName}} in that user’s configured repositories—preserving UX when older data predates user scoping.
+
+
+\subsection{1.6.5 Operational extras}
+
+
+\begin{itemize}
+\item \textbf{SSE:} authenticated \textbf{\texttt{GET /api/events}} (\texttt{events.ts}) streams \textbf{\texttt{text/event-stream}}, sends an initial \textbf{\texttt{hello}} event, subscribes to \textbf{\texttt{publish}}, and emits \textbf{25 s heartbeats} as comments (\texttt{: ping}).
+\item \textbf{Dashboard summary:} \textbf{\texttt{GET /api/dashboard/summary}} returns connection state, repo/installation rows, webhook metadata, scheduler env snapshot \textbf{\texttt{readScheduledScanEnv()}}, and a structured description of AI pipeline steps.
+\item \textbf{Scheduler:} when \textbf{\texttt{ENABLE\_BUG\_SCAN=true}}, \textbf{\texttt{startBugScanScheduler}} runs \textbf{\texttt{tick}} on an interval (\textbf{\texttt{BUG\_SCAN\_INTERVAL\_MINUTES}}, default 60), lists open PRs (\textbf{\texttt{BUG\_SCAN\_MAX\_PRS\_PER\_REPO}}), optionally skips unchanged heads (\textbf{\texttt{BUG\_SCAN\_SKIP\_UNCHANGED}}, default true), and calls \textbf{\texttt{reviewPullRequest}} with \textbf{\texttt{postComment}} controlled by \textbf{\texttt{BUG\_SCAN\_POST\_COMMENTS}}.
+\end{itemize}
+
+
+\section{1.7 Methodological approach}
+
+
+Given \textbf{uncertainty} in LLM behavior and \textbf{integration} pitfalls (GitHub payloads, primary and secondary rate limits), an \textbf{iterative and incremental} process was appropriate—analogous in spirit to the spiral / incremental models often cited in software-engineering curricula, but instantiated here against this repository’s concrete commits.
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 1.2 summarizes actors and boundaries; Figure 1.3 outlines repeating cycles.
+\vspace{1.2cm}}}
+\caption{Figure 1.2 summarizes actors and boundaries; Figure 1.3 outlines repeating cycles.}
+\end{figure}
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 1.2: Stakeholder and system context (developer, platform, GitHub).
+\vspace{1.2cm}}}
+\caption{Stakeholder and system context (developer, platform, GitHub).}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 1.2: Stakeholder and system context (developer, platform, GitHub).}]
+flowchart LR
+  subgraph actors [Human actors]
+    Dev[Platform user]
+  end
+  subgraph ext [External systems]
+    GH[GitHub]
+    Gem[Gemini via Python bridge]
+  end
+  subgraph pfe [PFE platform]
+    SPA[React dashboard]
+    API[Express API]
+    DB[(MongoDB)]
+  end
+  Dev --> SPA
+  SPA --> API
+  API --> DB
+  API --> GH
+  GH --> API
+  API --> Gem
+\end{lstlisting}
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 1.3: Iterative and incremental development phases applied to this project.
+\vspace{1.2cm}}}
+\caption{Iterative and incremental development phases applied to this project.}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 1.3: Iterative and incremental development phases applied to this project.}]
+flowchart TB
+  plan[Planning and risk identification]
+  build[Implement increment]
+  integrate[Integrate with GitHub and MongoDB]
+  test[Test and harden]
+  plan --> build
+  build --> integrate
+  integrate --> test
+  test --> plan
+\end{lstlisting}
+
+
+\textbf{Illustrative iteration themes} aligned to the codebase:
+
+
+\begin{enumerate}
+\item \textbf{Webhook correctness:} raw body parsing, \textbf{\texttt{pull\_request}} action filter, \textbf{\texttt{installationId} fallbacks}, \texttt{RepoConfig} upsert race handling (duplicate key retry) in \texttt{server.ts}.
+\item \textbf{Auth hardening:} \textbf{JWT} sessions, \textbf{bcrypt} password storage, \textbf{GitHub OAuth} error HTML, \textbf{\texttt{requireSession}} forbidding API-key auth on key-minting routes (\texttt{middleware.ts}).
+\item \textbf{Review robustness:} \textbf{diff filtering} tests (\texttt{filterUnifiedDiffForReview.test.ts}), \textbf{GitHub posting strategy} tests (\texttt{githubPostingStrategy.test.ts}), Python \textbf{timeout} and \textbf{retry} backoff.
+\item \textbf{Operator experience:} \textbf{SSE} bus wiring with \textbf{\texttt{publish}} on installation link and repo-config updates; \textbf{dashboard summary} exposing scheduler and AI settings for observability.
+\end{enumerate}
+
+
+\section{1.8 Conclusion}
+
+
+Chapter 1 positioned the \textbf{PFE review platform} within collaborative software engineering practice, tied the \textbf{problem statement} to \textbf{scalability}, \textbf{consistency}, and \textbf{LLM risk}, and surveyed \textbf{manual}, \textbf{CI}, and \textbf{SaaS} alternatives. Section 1.6 summarized the \textbf{actual} implementation paths—\textbf{Express} routes, \textbf{webhook} semantics, \textbf{\texttt{reviewPullRequest}}, \textbf{Mongoose} models, \textbf{SSE}, and the optional \textbf{bug-scan scheduler}—so that the proposal is falsifiable against the repository. Chapter 2 formalizes \textbf{requirements} and \textbf{interaction models} using tables and UML-oriented diagrams.
+
+
+
+% End Chapter 1 (General context) | Start Chapter 2 (Needs identification and specification)
+
+\chapter{2 Needs identification and specification}
+
+
+\section{2.1 Introduction}
+
+
+Requirements capture \textbf{what} the system must do for its users and \textbf{constraints} on \textbf{how} it does it. In this repository, the \textbf{authoritative} sources for functional behavior are the \textbf{Express route registrations} under \texttt{backend/src/routes/}, the \textbf{\texttt{server.ts}} webhook handler, \textbf{\texttt{reviewPullRequest.ts}}, and the \textbf{dashboard} composition in \textbf{\texttt{DashboardApp.tsx}}. This chapter therefore links each requirement to those artifacts so that an examiner can verify claims quickly.
+
+
+The chapter proceeds as follows: \textbf{actors} and their goals (§2.2); a \textbf{consolidated functional list} with \textbf{traceability} to HTTP endpoints (§2.3 and Table 2.4); \textbf{non-functional} constraints inferred from middleware, environment variables, and hard-coded limits (§2.4); \textbf{use case} diagrams at global and detailed levels (§2.5–2.6); and \textbf{sequence} diagrams with \textbf{step tables} for the three dominant flows: webhook review, GitHub OAuth, and repository configuration updates (§2.7).
+
+
+\section{2.2 Actor identification}
+
+
+\begingroup\small
+\begin{tabular}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Actor & Goals \\
+\midrule
+\textbf{Platform user} & Operate a dashboard that reflects \textbf{their} GitHub App installations and repositories; tune review policy; read \textbf{findings}; optionally register \textbf{API keys} when deployment policy requires them. \\
+\textbf{GitHub (external system)} & Deliver \textbf{webhooks}; complete \textbf{OAuth} for users; serve \textbf{REST} APIs for repos and PRs. \\
+\bottomrule
+\end{tabular}
+\endgroup
+
+
+\textbf{Secondary stakeholders} (not separate actor types in the diagrams) include \textbf{repository authors} who see posted reviews on PRs, and \textbf{administrators} who configure environment secrets (\texttt{JWT\_SECRET}, App keys, \texttt{MONGO\_URI}) on the host running Node.
+
+
+\section{2.3 Functional requirements analysis}
+
+
+The following identifiers \textbf{FR-xx} consolidate capabilities that the implemented routes already expose. They are \textbf{not} a separate specification document—they summarize code behavior.
+
+
+\begingroup\small
+\begin{tabular}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+ID & Requirement \\
+\midrule
+\textbf{FR-01} & \textbf{User self-registration} with email and password (minimum \textbf{8} characters), optional display name. \\
+\textbf{FR-02} & \textbf{Email/password login} issuing a \textbf{JWT} session. \\
+\textbf{FR-03} & \textbf{Session introspection} for authenticated clients. \\
+\textbf{FR-04} & \textbf{GitHub OAuth browser login} using authorization code flow; scopes \textbf{\texttt{read:user}} and \textbf{\texttt{user:email}}. \\
+\textbf{FR-05} & \textbf{Claim GitHub App installations} per user with uniqueness on \textbf{\texttt{installationId}}; reject cross-account hijack (\textbf{409}). \\
+\textbf{FR-06} & \textbf{Deep-link} to GitHub’s \textbf{new installation} page with signed \textbf{\texttt{state}}. \\
+\textbf{FR-07} & \textbf{Repository configuration} CRUD: list, create from \textbf{\texttt{installationId} + \texttt{repoFullName}}, patch policy fields, delete. \\
+\textbf{FR-08} & \textbf{Validate} \texttt{RepoConfig} inputs: \textbf{\texttt{focusAreas}} pattern and max \textbf{16} tags; \textbf{\texttt{enforcementLevel}} ∈ {\texttt{warning},\texttt{error}}; \textbf{\texttt{customRules} ≤ 4000} chars; \textbf{\texttt{mergeMinScore}} clamped \textbf{0–100}. \\
+\textbf{FR-09} & \textbf{Automated PR review} on \textbf{\texttt{pull\_request}} \textbf{\texttt{opened}} / \textbf{\texttt{synchronize}} after webhook receipt. \\
+\textbf{FR-10} & \textbf{Persist findings} with \textbf{visibility} rules merging \texttt{userId} match and legacy unmigrated rows for repos the user configures. \\
+\textbf{FR-11} & \textbf{Filter and paginate findings} (\texttt{repoFullName}, \texttt{prNumber}, \texttt{category}, \texttt{fileContains}, text \textbf{\texttt{q}}, \textbf{\texttt{since}}, \textbf{\texttt{skip}}, \textbf{\texttt{limit}} capped at \textbf{200}). \\
+\textbf{FR-12} & \textbf{Category rollups} for dashboard analytics. \\
+\textbf{FR-13} & \textbf{Operator dashboard summary} with Mongo connectivity, installations, repos, webhook metadata, scheduler env snapshot, AI pipeline notes. \\
+\textbf{FR-14} & \textbf{SSE stream} of domain events (\texttt{installation-linked}, \texttt{repo-config-updated}, …) with periodic comment heartbeats. \\
+\textbf{FR-15} & \textbf{API keys} (hashed at rest) with \textbf{revocation}; optional \textbf{\texttt{REQUIRE\_API\_KEY\_FOR\_REVIEWS}} gate in webhook path. \\
+\bottomrule
+\end{tabular}
+\endgroup
+
+
+\textbf{Table 2.4 — Representative HTTP API surface (paths as mounted in \texttt{server.ts} and route modules).}
+
+
+\begingroup\small
+\begin{tabular}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Path & Typical authentication \\
+\midrule
+\texttt{POST /api/webhooks/github} & Optional \textbf{HMAC} via \texttt{GITHUB\_WEBHOOK\_SECRET} \\
+\texttt{POST /api/auth/register}, \texttt{POST /api/auth/login} & None \\
+\texttt{GET /api/auth/me} & \texttt{requireAuth} \\
+\texttt{GET /api/auth/github/start}, \texttt{GET /api/auth/github/callback} & None (browser OAuth) \\
+\texttt{GET /api/installations}, \texttt{POST /api/installations}, \texttt{DELETE /api/installations/:id} & \texttt{requireAuth} \\
+\texttt{GET /api/github/install}, \texttt{POST /api/github/install-link} & \texttt{requireAuth} \\
+\texttt{GET /api/repo-configs}, \texttt{GET /api/repo-configs/available}, \texttt{POST /api/repo-configs}, \texttt{PATCH /api/repo-configs/:id}, \texttt{DELETE /api/repo-configs/:id} & \texttt{requireAuth} \\
+\texttt{GET /api/findings}, \texttt{GET /api/findings/by-category} & \texttt{requireAuth} \\
+\texttt{GET /api/dashboard/summary} & \texttt{requireAuth} \\
+\texttt{GET /api/events} & \texttt{requireAuth} \\
+\texttt{GET /api/keys}, \texttt{POST /api/keys}, \texttt{DELETE /api/keys/:id} & \texttt{requireSession} \\
+\bottomrule
+\end{tabular}
+\endgroup
+
+
+\section{2.4 Non-functional requirements specification}
+
+
+\textbf{Security.}
+
+
+\begin{itemize}
+\item \textbf{Passwords:} never stored plaintext; \textbf{\texttt{bcryptjs}} hashing on register (\texttt{hashPassword}).
+\item \textbf{Sessions:} JWT signed with \textbf{\texttt{JWT\_SECRET}}; error hints reference minimum length when misconfigured.
+\item \textbf{API keys:} random plaintext shown \textbf{once} on create; \textbf{\texttt{keyHash}} and display \textbf{\texttt{prefix}} stored; revocation sets \textbf{\texttt{revokedAt}} via \texttt{findOneAndUpdate} on \textbf{\texttt{DELETE /api/keys/:id}}.
+\item \textbf{Webhooks:} when \textbf{\texttt{GITHUB\_WEBHOOK\_SECRET}} is set, \textbf{\texttt{X-Hub-Signature-256}} must match \textbf{\texttt{verifyGithubSignature256}}; \textbf{timing-safe} hex compare. If the secret is \textbf{absent}, verification is skipped—acceptable only for trusted local testing.
+\item \textbf{CORS:} \textbf{single} allowed origin from \textbf{\texttt{FRONTEND\_BASE\_URL}} (trailing slash stripped); \textbf{\texttt{credentials: false}} in \texttt{server.ts}.
+\item \textbf{Multi-tenant isolation:} repository and installation routes scope queries by \textbf{\texttt{req.user.\_id}}; \textbf{409} if an installation is already owned by another user.
+\end{itemize}
+
+
+\textbf{Performance and scalability.}
+
+
+\begin{itemize}
+\item \textbf{AI subprocess timeout:} \textbf{90 s} per \texttt{runPythonReviewOnce} invocation.
+\item \textbf{Diff segmentation:} default \textbf{~10k} characters per AI segment (\texttt{DIFF\_MAX\_FOR\_AI} in \texttt{reviewPullRequest.ts}) and configurable lines per segment (\textbf{\texttt{DIFF\_REVIEW\_MAX\_LINES\_PER\_SEGMENT}}, default \textbf{400} in code).
+\item \textbf{Burst control:} optional \textbf{\texttt{AI\_REVIEW\_SEGMENT\_DELAY\_MS}} between segments; \textbf{\texttt{AI\_REVIEW\_RETRY\_MAX}} (default \textbf{3}) and exponential-style backoff for retriable Gemini errors (\texttt{runPythonReview}).
+\item \textbf{GitHub posting:} multiple **\texttt{GITHUB\_REVIEW\_*}\textbf{ env vars cap review body, inline comments, and enable }preemptive slim** estimates (\texttt{githubPostingStrategy.ts}).
+\end{itemize}
+
+
+\textbf{Reliability and availability.}
+
+
+\begin{itemize}
+\item \textbf{MongoDB:} application logs missing \textbf{\texttt{MONGO\_URI}}; connection catch logs errors; \textbf{\texttt{RepoConfig.syncIndexes()}} on startup; \textbf{scheduler} \textbf{\texttt{tick}} returns early if \textbf{\texttt{mongoose.connection.readyState !== 1}}.
+\item \textbf{Webhook processing:} HTTP \textbf{200} \textbf{\texttt{Webhook received}} is sent \textbf{after} signature check \textbf{before} heavyweight work—GitHub should not retry while the async path still runs; errors in the async path are \textbf{logged} (typical fire-and-forget pattern).
+\end{itemize}
+
+
+\textbf{Usability and observability.}
+
+
+\begin{itemize}
+\item \textbf{Dashboard summary} exposes \textbf{\texttt{scheduledBugScan}} snapshot via \textbf{\texttt{readScheduledScanEnv()}} so operators see interval, caps, and booleans without reading \texttt{.env} on disk.
+\item \textbf{HTML error pages} for common OAuth and install-link misconfigurations guide users to fix \textbf{\texttt{redirect\_uri}} or \textbf{\texttt{GITHUB\_APP\_SLUG}}.
+\end{itemize}
+
+
+\textbf{Maintainability and portability.}
+
+
+\begin{itemize}
+\item \textbf{TypeScript} throughout backend; \textbf{ES modules} (\texttt{"type": "module"}).
+\item \textbf{Modular routers} per concern (\texttt{auth}, \texttt{installations}, \texttt{repoConfigs}, \texttt{findings}, \texttt{keys}, \texttt{dashboard}, \texttt{events}).
+\item \textbf{Automated tests} focused on \textbf{diff filtering} and \textbf{GitHub posting strategy} (\texttt{*.test.ts} files)—see Chapter 5.
+\end{itemize}
+
+
+\section{2.5 Functional requirements specification and global use cases}
+
+
+Figure 2.1 aggregates user-visible goals (\textbf{FR-01–FR-08}, \textbf{FR-10–FR-15}) and the non-human \textbf{webhook} path (\textbf{FR-09}). The \textbf{Platform user} appears on the left; \textbf{GitHub} appears as an external actor for \textbf{UC6} (delivery) and for OAuth/App install flows that bridge out of the browser.
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 2.1: Global use case diagram — platform user, GitHub, and core services.
+\vspace{1.2cm}}}
+\caption{Global use case diagram — platform user, GitHub, and core services.}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 2.1: Global use case diagram — platform user, GitHub, and core services.}]
+flowchart TB
+  user((Platform user))
+  gh[[GitHub]]
+  subgraph system [PFE review platform]
+    UC1[Register / Sign in]
+    UC2[Link GitHub App installation]
+    UC3[Configure repository policy]
+    UC4[Manage API keys]
+    UC5[View findings and dashboard]
+    UC6[Receive PR webhooks and run AI review]
+  end
+  user --> UC1
+  user --> UC2
+  user --> UC3
+  user --> UC4
+  user --> UC5
+  gh --> UC6
+  UC6 --> gh
+  UC2 --> gh
+  UC3 --> gh
+\end{lstlisting}
+
+
+\section{2.6 Detailed use case diagrams}
+
+
+Each subsection below refines one \textbf{cluster} of the global diagram. They are \textbf{not} separate products—they are views on the same code paths already listed in Table 2.4.
+
+
+\subsection{Authenticate}
+
+
+Email/password flows hit **\texttt{POST /api/auth/*}\textbf{ with JSON bodies. GitHub OAuth is }browser-first\textbf{: the user agent issues }\texttt{GET /api/auth/github/start}\textbf{, which }302\textbf{-redirects to }\texttt{github.com/login/oauth/authorize}\textbf{ with }\texttt{read:user}\textbf{ and }\texttt{user:email}\textbf{ scopes; }\texttt{state}\textbf{ carries the post-login }\texttt{next}\textbf{ path (must start with \texttt{/}). The callback }\texttt{GET /api/auth/github/callback}\textbf{ exchanges the }\texttt{code}\textbf{, merges }\texttt{githubId} / \texttt{githubLogin}\textbf{ into }\texttt{User}\textbf{, and finally redirects back to the SPA with a token (implementation details in }\texttt{auth.ts}**).
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 2.2: Use case diagram — authenticate (email/password or GitHub OAuth).
+\vspace{1.2cm}}}
+\caption{Use case diagram — authenticate (email/password or GitHub OAuth).}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 2.2: Use case diagram — authenticate (email/password or GitHub OAuth).}]
+flowchart LR
+  user((Platform user))
+  subgraph auth [Authentication]
+    UCa[Register with email]
+    UCb[Login with email]
+    UCc[Sign in with GitHub OAuth]
+    UCd[Receive JWT session]
+  end
+  user --> UCa
+  user --> UCb
+  user --> UCc
+  UCa --> UCd
+  UCb --> UCd
+  UCc --> UCd
+\end{lstlisting}
+
+
+\subsection{Link installation}
+
+
+Operators can \textbf{list} existing rows (\textbf{\texttt{GET /api/installations}}), \textbf{claim} a numeric installation id discovered after installing the GitHub App (\textbf{\texttt{POST /api/installations}} body), or \textbf{delete} a stale record (\textbf{\texttt{DELETE /api/installations/:id}} by Mongo \textbf{\texttt{\_id}}). \textbf{\texttt{POST}} calls \textbf{\texttt{apps.getInstallation}} to populate \textbf{\texttt{accountLogin}} / \textbf{\texttt{accountType}} and emits \textbf{\texttt{installation-linked}} on the \textbf{SSE} bus. First-time install uses \textbf{\texttt{GET /api/github/install}} (full redirect) or \textbf{\texttt{POST /api/github/install-link}} (JSON URL for SPA fetch with \textbf{Authorization} header).
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 2.3: Use case diagram — link GitHub App installation to the user account.
+\vspace{1.2cm}}}
+\caption{Use case diagram — link GitHub App installation to the user account.}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 2.3: Use case diagram — link GitHub App installation to the user account.}]
+flowchart TB
+  user((Platform user))
+  gh[[GitHub]]
+  subgraph inst [Installation linking]
+    UCi[Submit installation id]
+    UCv[Validate ownership via Octokit]
+    UCs[Store Installation document]
+  end
+  user --> UCi
+  UCi --> UCv
+  UCv --> gh
+  UCv --> UCs
+\end{lstlisting}
+
+
+\subsection{Configure repository}
+
+
+\textbf{\texttt{GET /api/repo-configs/available}} uses \textbf{\texttt{listReposAccessibleToInstallation}} pagination (\textbf{100} per page) to enumerate repositories for a validated \textbf{\texttt{installationId}}. \textbf{POST} creates a new \textbf{\texttt{RepoConfig}} if the pair \textbf{\texttt{(userId, repoFullName)}} is unique (\textbf{409} otherwise). \textbf{PATCH} updates whitelisted fields only; \textbf{DELETE} removes configuration and publishes \textbf{\texttt{repo-config-updated}}.
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 2.4: Use case diagram — configure repository review policy.
+\vspace{1.2cm}}}
+\caption{Use case diagram — configure repository review policy.}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 2.4: Use case diagram — configure repository review policy.}]
+flowchart TB
+  user((Platform user))
+  gh[[GitHub]]
+  subgraph cfg [Configuration]
+    UCl[List accessible repos]
+    UCc[Create RepoConfig]
+    UCu[Update focus/rules/score]
+    UCd[Delete RepoConfig]
+  end
+  user --> UCl
+  UCl --> gh
+  user --> UCc
+  user --> UCu
+  user --> UCd
+\end{lstlisting}
+
+
+\subsection{Automated PR review}
+
+
+This use case is \textbf{not} initiated by the Platform user in real time; it is initiated by \textbf{GitHub}. The handler validates the \textbf{\texttt{pull\_request}} subset, resolves \textbf{tenant} context, optionally enforces \textbf{\texttt{REQUIRE\_API\_KEY\_FOR\_REVIEWS}}, then delegates to \textbf{\texttt{reviewPullRequest}}, which may \textbf{spawn} Python, \textbf{write} \texttt{PrReviewFinding} documents, and \textbf{call} GitHub review APIs.
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 2.5: Use case diagram — automated pull request review (webhook-driven).
+\vspace{1.2cm}}}
+\caption{Use case diagram — automated pull request review (webhook-driven).}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 2.5: Use case diagram — automated pull request review (webhook-driven).}]
+flowchart LR
+  gh[[GitHub]]
+  subgraph auto [Automation]
+    UCr[Receive pull\_request webhook]
+    UCp[Fetch diff and run reviewPullRequest]
+    UCs[Persist findings]
+    UCw[Post GitHub review optional]
+  end
+  gh --> UCr
+  UCr --> UCp
+  UCp --> UCs
+  UCp --> UCw
+  UCw --> gh
+\end{lstlisting}
+
+
+\section{2.7 System sequence diagrams}
+
+
+The sequences omit \textbf{fine-grained} error branches (e.g. \textbf{502} from \texttt{listReposAccessibleToInstallation}) but match the \textbf{happy paths} exercised during integration testing. Note: the \textbf{webhook} path intentionally \textbf{acknowledges} quickly to GitHub (\textbf{§2.4 Reliability}).
+
+
+\subsection{Webhook review pipeline}
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 2.6: Sequence diagram — GitHub webhook to review posting.
+\vspace{1.2cm}}}
+\caption{Sequence diagram — GitHub webhook to review posting.}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 2.6: Sequence diagram — GitHub webhook to review posting.}]
+sequenceDiagram
+  participant GH as GitHub
+  participant EX as Express webhook
+  participant RPR as reviewPullRequest
+  participant OK as Octokit
+  participant PY as Python Gemini bridge
+  participant DB as MongoDB
+  GH->>EX: POST pull\_request opened or synchronize
+  EX->>EX: Verify HMAC if secret set
+  EX->>DB: Load Installation and RepoConfig
+  EX->>RPR: Invoke review
+  RPR->>OK: Fetch PR diff
+  RPR->>PY: Run segmented AI calls
+  PY-->>RPR: Structured text response
+  RPR->>DB: Upsert PrReviewFinding
+  RPR->>OK: Create review or comments optional
+  OK-->>GH: Review visible on PR
+\end{lstlisting}
+
+
+\textbf{Table 2.1 — Textual description of the automated PR review (webhook) interaction.}
+
+
+\begingroup\small
+\begin{tabular}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Step & Actor / component \\
+\midrule
+1 & GitHub \\
+2 & Express \\
+3 & Express \\
+4 & Express \\
+5 & Express \\
+6 & Express \\
+7 & Express \\
+8 & Express \\
+9 & Express \\
+10 & Express \\
+11 & \texttt{reviewPullRequest} \\
+\bottomrule
+\end{tabular}
+\endgroup
+
+
+\subsection{GitHub OAuth}
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 2.7: Sequence diagram — GitHub OAuth sign-in and session establishment.
+\vspace{1.2cm}}}
+\caption{Sequence diagram — GitHub OAuth sign-in and session establishment.}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 2.7: Sequence diagram — GitHub OAuth sign-in and session establishment.}]
+sequenceDiagram
+  participant U as Platform user
+  participant SPA as React SPA
+  participant API as Auth routes
+  participant GH as GitHub OAuth
+  U->>SPA: Click Sign in with GitHub
+  SPA->>API: Redirect to authorize URL
+  API->>GH: Authorization request
+  GH->>API: Authorization code callback
+  API->>GH: Exchange code for access token
+  API->>API: Upsert user link githubId
+  API->>SPA: Issue JWT session
+\end{lstlisting}
+
+
+\textbf{Table 2.2 — Textual description of the GitHub OAuth sign-in flow.}
+
+
+\begingroup\small
+\begin{tabular}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Step & Component \\
+\midrule
+1 & User / browser \\
+2 & Backend \\
+3 & Backend \\
+4 & GitHub \\
+5 & Backend \\
+6 & Backend \\
+\bottomrule
+\end{tabular}
+\endgroup
+
+
+\subsection{Repository configuration update}
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 2.8: Sequence diagram — update repository configuration from the dashboard.
+\vspace{1.2cm}}}
+\caption{Sequence diagram — update repository configuration from the dashboard.}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 2.8: Sequence diagram — update repository configuration from the dashboard.}]
+sequenceDiagram
+  participant U as Platform user
+  participant SPA as React SPA
+  participant API as Repo config routes
+  participant DB as MongoDB
+  participant BUS as Event bus
+  U->>SPA: Edit focus rules or score
+  SPA->>API: PATCH /api/repo-configs/:id
+  API->>DB: findOneAndUpdate scoped by user
+  API->>BUS: publish repo-config-updated
+  API-->>SPA: JSON config view
+\end{lstlisting}
+
+
+\textbf{Table 2.3 — Textual description of the repository configuration update flow.}
+
+
+\begingroup\small
+\begin{tabular}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Step & Component \\
+\midrule
+1 & User \\
+2 & SPA \\
+3 & Backend \\
+4 & MongoDB \\
+5 & Event bus \\
+6 & SPA \\
+\bottomrule
+\end{tabular}
+\endgroup
+
+
+\section{2.8 Conclusion}
+
+
+Chapter 2 identified \textbf{two primary actors}—the \textbf{Platform user} and \textbf{GitHub}—and documented \textbf{fifteen functional requirements (FR-01–FR-15)} with explicit \textbf{traceability} to route paths and models. \textbf{Table 2.4} centralizes the \textbf{HTTP surface}. Non-functional expectations span \textbf{security} (password hashing, JWT, optional webhook HMAC, CORS, tenant isolation), \textbf{performance} (AI timeouts, segmentation, retries, GitHub posting caps), \textbf{reliability} (Mongo readiness, early webhook acknowledgment), and \textbf{maintainability} (router modularity, targeted tests). \textbf{Figures 2.1–2.5} and \textbf{2.6–2.8}, together with \textbf{Tables 2.1–2.3}, supply a bridge from narrative requirements to \textbf{Chapter 3}’s conceptual background.
+
+
+
+\chapter{3 Background and related work}
+
+
+\section{3.1 Introduction}
+
+
+This chapter reviews \textbf{pull-request workflows}, \textbf{human and automated review}, \textbf{GitHub integration patterns}, and \textbf{LLM-assisted code analysis}, positioning the PFE platform against \textbf{commercial} and \textbf{open} alternatives without inventing benchmark numbers.
+
+
+\section{3.2 Pull requests and collaborative engineering}
+
+
+\textbf{Pull requests} encapsulate proposed changes, discussion, and policy checks before merge. They are the dominant collaboration primitive on GitHub and shape how review automation must behave: \textbf{event-driven}, \textbf{diff-centric}, and respectful of \textbf{branch protection}.
+
+
+\section{3.3 Human code review and automation}
+
+
+Survey literature (e.g. Baccelli and Bird, ICSE 2013) describes modern code review outcomes and challenges. \textbf{Automation} complements human judgment with \textbf{linters}, \textbf{tests}, and increasingly \textbf{language models}. The PFE platform treats the model as an \textbf{assistant} whose output is \textbf{parsed} and \textbf{stored}, not as an infallible oracle.
+
+
+\section{3.4 GitHub Apps, OAuth, and webhooks}
+
+
+\textbf{GitHub Apps} provide \textbf{installation-scoped} credentials and \textbf{webhook} subscriptions—ideal for \textbf{multi-tenant} linking of customer organizations to a single SaaS deployment pattern. \textbf{OAuth} (separate OAuth App) is appropriate for \textbf{user identity} in the browser, distinct from \textbf{App} credentials (\texttt{GITHUB\_APP\_ID}, private key). Webhook \textbf{signatures} (HMAC-SHA256) mitigate forged events [GitHub Docs].
+
+
+\section{3.5 Large language models for code review}
+
+
+LLMs can \textbf{summarize diffs} and flag suspected defects but may \textbf{hallucinate}. Mitigations in this project include \textbf{diff filtering}, \textbf{segmentation}, \textbf{timeouts}, and \textbf{structured response parsing} before posting to GitHub.
+
+
+\section{3.6 Related products and positioning}
+
+
+\textbf{Table 3.1 — Qualitative comparison of review assistance categories.}
+
+
+\begingroup\small
+\begin{tabular}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Category & Role \\
+\midrule
+Manual review only & Authority and intent \\
+CI static analysis & Deterministic gates \\
+IDE assistants & Authoring time \\
+Hosted PR bots & Turnkey SaaS \\
+\bottomrule
+\end{tabular}
+\endgroup
+
+
+Named competitors or services should be cited from \textbf{vendor documentation} in the final bibliography if you make product-specific claims.
+
+
+\section{3.7 Conclusion}
+
+
+The technical backdrop motivates \textbf{event-driven} GitHub integration, \textbf{installation-aware} multi-tenancy, and \textbf{careful} LLM use. Chapter 4 translates these ideas into a concrete \textbf{architecture}.
+
+
+
+\chapter{4 System design and architecture}
+
+
+\section{4.1 Introduction}
+
+
+This chapter describes the \textbf{deployment context}, \textbf{layered architecture}, \textbf{data model}, and \textbf{major subsystems} implemented under \texttt{PFE/backend} and \texttt{PFE/frontend}.
+
+
+\section{4.2 Working environment}
+
+
+\textbf{Table 4.2 — Primary technology stack (representative versions from package manifests).}
+
+
+\begingroup\small
+\begin{tabular}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Layer & Technology \\
+\midrule
+Runtime & Node.js \textbf{>= 22} (backend \texttt{engines}) \\
+Backend framework & Express \textbf{5}, TypeScript \\
+Data store & MongoDB with \textbf{Mongoose 9} \\
+Git integration & \textbf{Octokit 5}; GitHub App + OAuth \\
+Frontend & React \textbf{19}, Vite \textbf{8}, React Router \textbf{7}, Tailwind \textbf{4} \\
+AI bridge & Python \textbf{3} + \texttt{requests} (\texttt{pythonExploit.py}) \\
+Auth & \textbf{JWT} (\texttt{jsonwebtoken}), \texttt{bcryptjs} \\
+\bottomrule
+\end{tabular}
+\endgroup
+
+
+\textbf{Hardware} follows a standard developer or small-server profile: x64/ARM64 host, with network egress to GitHub and to the Gemini endpoint used by the Python script. \textbf{Environment variables} (\texttt{PORT}, \texttt{MONGO\_URI}, \texttt{JWT\_SECRET}, GitHub App and OAuth secrets, optional bug-scan toggles) configure instances.
+
+
+\section{4.3 Logical and physical architecture}
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 4.1: Global system architecture (React SPA, Express API, MongoDB, GitHub, Python bridge).
+\vspace{1.2cm}}}
+\caption{Global system architecture (React SPA, Express API, MongoDB, GitHub, Python bridge).}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 4.1: Global system architecture (React SPA, Express API, MongoDB, GitHub, Python bridge).}]
+flowchart TB
+  subgraph client [Browser]
+    SPA[React SPA Vite]
+  end
+  subgraph server [Node process]
+    API[Express API]
+    SCH[Bug scan scheduler]
+    RPR[reviewPullRequest]
+  end
+  DB[(MongoDB)]
+  GH[GitHub APIs and Webhooks]
+  PY[pythonExploit.py]
+  GEM[Gemini stream endpoint]
+  SPA <-->|HTTPS JSON| API
+  API <-->|Mongoose| DB
+  GH -->|Webhooks| API
+  API -->|invoke| RPR
+  SCH -->|periodic invoke| RPR
+  RPR <-->|REST| GH
+  RPR <-->|Mongoose| DB
+  RPR -->|spawn| PY
+  PY <-->|HTTPS| GEM
+\end{lstlisting}
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 4.2: Major backend and frontend component groups.
+\vspace{1.2cm}}}
+\caption{Major backend and frontend component groups.}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 4.2: Major backend and frontend component groups.}]
+flowchart LR
+  subgraph fe [frontend\_src]
+    PANELS[Dashboard panels]
+    APIF[api clients]
+    AUTHF[AuthContext]
+  end
+  subgraph be [backend\_src]
+    ROUTES[routes auth installations repoConfigs keys events dashboard findings]
+    REV[review reviewPullRequest filter pythonReview]
+    GH[github octokit fetchPrDiff]
+    ENF[enforcer parseEnforcerResponse]
+    FIND[findings upsertPrReviewFindings]
+  end
+  PANELS --> APIF
+  APIF --> ROUTES
+  ROUTES --> REV
+  REV --> GH
+  REV --> ENF
+  REV --> FIND
+\end{lstlisting}
+
+
+\section{4.4 Data design}
+
+
+\textbf{Table 4.1 — Main MongoDB collections and their roles.}
+
+
+\begingroup\small
+\begin{tabular}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Collection & Principal fields \\
+\midrule
+\texttt{User} & \texttt{email}, \texttt{passwordHash?}, \texttt{githubId?}, \texttt{githubLogin?} \\
+\texttt{Installation} & \texttt{userId}, \texttt{installationId}, \texttt{accountLogin}, \texttt{accountType} \\
+\texttt{RepoConfig} & \texttt{userId}, \texttt{installationId}, \texttt{repoFullName}, \texttt{focusAreas}, \texttt{enforcementLevel}, \texttt{useAstGrep}, \texttt{customRules}, \texttt{mergeMinScore} \\
+\texttt{ApiKey} & \texttt{userId}, \texttt{name}, \texttt{prefix}, \texttt{keyHash}, \texttt{revokedAt?} \\
+\texttt{PrReviewFinding} & \texttt{userId?}, \texttt{repoFullName}, \texttt{prNumber}, \texttt{category}, \texttt{filePath}, line fields, \texttt{description}, \texttt{dedupeKey?} \\
+\bottomrule
+\end{tabular}
+\endgroup
+
+
+Indexes include unique \texttt{(userId, repoFullName)} on \texttt{RepoConfig} and sparse unique \texttt{dedupeKey} on findings.
+
+
+\section{4.5 Key subsystems}
+
+
+\begin{itemize}
+\item \textbf{Webhook subsystem:} \texttt{server.ts} mounts raw body parser for signature verification, branches on \texttt{x-github-event} and \texttt{pull\_request} actions.
+\item \textbf{Review subsystem:} composes diff text, enforcer parsing, dedupe keys, GitHub posting strategy.
+\item \textbf{Auth subsystem:} JWT middleware (\texttt{requireAuth}, \texttt{requireSession}), password hashing, OAuth callback HTML flows.
+\item \textbf{Realtime subsystem:} in-process event bus for SSE (\texttt{/api/events}).
+\item \textbf{Scheduler subsystem:} \texttt{startBugScanScheduler} invoked on listen when enabled.
+\end{itemize}
+
+
+\section{4.6 Conclusion}
+
+
+The architecture separates \textbf{user-facing SPA}, \textbf{stateless API} with \textbf{MongoDB} persistence, \textbf{GitHub} as an external control plane, and a \textbf{Python} model bridge. Chapter 5 discusses \textbf{implementation artifacts} and \textbf{evaluation}.
+
+
+
+\chapter{5 Implementation and evaluation}
+
+
+\section{5.1 Introduction}
+
+
+This chapter outlines \textbf{repository structure}, \textbf{notable implementation choices}, and \textbf{evaluation} grounded in \textbf{automated tests} and \textbf{manual integration}—without fabricating quantitative LLM benchmarks.
+
+
+\section{5.2 Implementation overview}
+
+
+The repository is split into \textbf{\texttt{PFE/backend}} (Node service) and \textbf{\texttt{PFE/frontend}} (Vite SPA). Configuration is environment-driven (\texttt{.env.example} template). Production builds compile TypeScript to \texttt{dist/} via \texttt{tsc}.
+
+
+\begin{figure}[htbp]\centering
+\fbox{\parbox{0.88\textwidth}{\centering\vspace{1.2cm}\ph{Insert diagram (Mermaid export)}\vspace{0.4cm}\\
+\small Figure 5.1: High-level mapping of repository directories to responsibilities.
+\vspace{1.2cm}}}
+\caption{High-level mapping of repository directories to responsibilities.}
+\end{figure}
+
+
+\begin{lstlisting}[caption={Figure 5.1: High-level mapping of repository directories to responsibilities.}]
+flowchart TB
+  root[PFE repository]
+  root --> BE[backend]
+  root --> FE[frontend]
+  BE --> SRC[src]
+  SRC --> RT[routes]
+  SRC --> RV[review]
+  SRC --> SCH[scheduler]
+  SRC --> GH[github]
+  BE --> MD[models]
+  BE --> SCR[scripts pythonExploit.py]
+  FE --> FSRC[src]
+  FSRC --> DASH[dashboard]
+  FSRC --> PGS[pages]
+\end{lstlisting}
+
+
+\section{5.3 Core modules}
+
+
+\begin{itemize}
+\item \textbf{\texttt{reviewPullRequest.ts}:} Orchestrates diff retrieval, AI segmentation, parsing, findings upsert, and GitHub posting with backoff on certain HTTP errors.
+\item \textbf{\texttt{pythonReview.ts}:} Spawns configured Python interpreter; enforces subprocess timeout.
+\item \textbf{\texttt{filterUnifiedDiffForReview.ts}:} Reduces noise sent to the model (subject to unit tests).
+\item \textbf{\texttt{githubPostingStrategy.ts}:} Encapsulates heuristics for slim vs full review payloads (unit-tested).
+\item \textbf{\texttt{bugScan.ts}:} Iterates installations and configured repos when scheduler enabled.
+\end{itemize}
+
+
+\section{5.4 User interface}
+
+
+The SPA enforces authentication gates (\texttt{RequireAuth}, \texttt{DashboardUnlockGate}) before rendering \texttt{DashboardApp}. Sections align with operator tasks: linking GitHub, editing configurations, inspecting findings, and managing keys—consistent with \texttt{SECTIONS} in \texttt{DashboardApp.tsx}.
+
+
+\section{5.5 Evaluation strategy and tests}
+
+
+\textbf{Table 5.1 — Automated backend tests identified in the repository.}
+
+
+\begingroup\small
+\begin{tabular}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Test file & Focus \\
+\midrule
+\texttt{src/review/filterUnifiedDiffForReview.test.ts} & Correctness of unified diff filtering for AI review \\
+\texttt{src/review/githubPostingStrategy.test.ts} & GitHub posting strategy behavior \\
+\bottomrule
+\end{tabular}
+\endgroup
+
+
+Running evaluations: \texttt{npm test} in \texttt{backend} executes \texttt{tsx --test "src/**/*.test.ts"}.
+
+
+\textbf{Manual validation} included end-to-end \textbf{pull request} exercise on repositories with the GitHub App installed: webhook delivery, review body presence, findings persistence, and dashboard refresh via SSE events.
+
+
+\section{5.6 Limitations and threats to validity}
+
+
+\begin{itemize}
+\item \textbf{Model dependency:} Gemini availability and policy constraints tied to the \textbf{stream bridge} implementation.
+\item \textbf{Security of credentials:} Operators must protect \texttt{JWT\_SECRET}, GitHub App private key, and webhook secret.
+\item \textbf{Evaluation scope:} No large-scale \textbf{empirical defect-detection benchmark} is reported here; quantitative claims would require a labeled dataset and controlled study.
+\end{itemize}
+
+
+\section{5.7 Conclusion}
+
+
+The platform is \textbf{implemented} as a modular TypeScript service with a React dashboard and Python model bridge, with \textbf{targeted unit tests} and \textbf{manual} GitHub validation. The general conclusion synthesizes achievements and future work.
+
+
+
+\chapter*{General Conclusion}
+\addcontentsline{toc}{chapter}{General Conclusion}
+
+
+This work presented the \textbf{PFE review platform}, an \textbf{AI-assisted}, \textbf{GitHub-integrated} service for \textbf{pull-request} review. The system combines \textbf{OAuth-identified operators}, \textbf{GitHub App installations}, \textbf{webhook-driven} automation, \textbf{MongoDB} persistence of \textbf{findings}, and a \textbf{Python} bridge to \textbf{Gemini}, all wrapped in a \textbf{React} dashboard for observability and configuration.
+
+
+\textbf{Contributions} include a \textbf{transparent} engineering articulation of event-driven review, \textbf{structured} persistence of model outputs, and \textbf{operational} mitigations for \textbf{rate limits} and \textbf{payload size}.
+
+
+\textbf{Future work} may encompass migration to an \textbf{official} Google Cloud Gemini API client, deeper \textbf{AST-grep} or static-analysis fusion, richer \textbf{metrics} on review utility, and hardened \textbf{multi-organization} RBAC if the product widens beyond per-user tenancy.
+
+
+
+\begin{thebibliography}{99}
+\bibitem{kb1}GitHub Docs. \textit{Validating webhook deliveries.} \url{https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries}
+
+\bibitem{kb2}GitHub Docs. \textit{About GitHub Apps.} \url{https://docs.github.com/en/apps/overview-of-github-apps/about-github-apps}
+
+\bibitem{kb3}A. Baccelli and C. Bird. “Expectations, outcomes, and challenges of modern code review.” In \textit{Proceedings of the 35th International Conference on Software Engineering (ICSE)}, 2013. (Complete per your school’s citation style.)
+
+\bibitem{kb4}Mongoose ODM documentation. \url{https://mongoosejs.com/}
+
+\bibitem{kb5}Octokit documentation. \url{https://github.com/octokit/octokit.js}
+
+\end{thebibliography}
+
+
+\textit{End of draft. Replace all bracketed institutional placeholders; export Mermaid figures to vector images if your template requires; update page numbers and regenerate Lists of Figures/Tables in Word.}
+
+
+\end{document}

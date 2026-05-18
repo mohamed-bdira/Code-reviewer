@@ -1,0 +1,14 @@
+flowchart TB
+  user((Platform user))
+  gh[[GitHub]]
+  subgraph cfg [Configuration]
+    UCl[List accessible repos]
+    UCc[Create RepoConfig]
+    UCu[Update focus/rules/score]
+    UCd[Delete RepoConfig]
+  end
+  user --> UCl
+  UCl --> gh
+  user --> UCc
+  user --> UCu
+  user --> UCd

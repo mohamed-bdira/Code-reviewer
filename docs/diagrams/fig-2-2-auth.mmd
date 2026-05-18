@@ -1,0 +1,14 @@
+flowchart LR
+  user((Platform user))
+  subgraph auth [Authentication]
+    UCa[Register with email]
+    UCb[Login with email]
+    UCc[Sign in with GitHub OAuth]
+    UCd[Receive JWT session]
+  end
+  user --> UCa
+  user --> UCb
+  user --> UCc
+  UCa --> UCd
+  UCb --> UCd
+  UCc --> UCd

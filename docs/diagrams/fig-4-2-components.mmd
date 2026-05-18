@@ -1,0 +1,19 @@
+flowchart LR
+  subgraph fe [frontend_src]
+    PANELS[Dashboard panels]
+    APIF[api clients]
+    AUTHF[AuthContext]
+  end
+  subgraph be [backend_src]
+    ROUTES[routes auth installations repoConfigs keys events dashboard findings]
+    REV[review reviewPullRequest filter pythonReview]
+    GH[github octokit fetchPrDiff]
+    ENF[enforcer parseEnforcerResponse]
+    FIND[findings upsertPrReviewFindings]
+  end
+  PANELS --> APIF
+  APIF --> ROUTES
+  ROUTES --> REV
+  REV --> GH
+  REV --> ENF
+  REV --> FIND

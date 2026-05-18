@@ -45,6 +45,10 @@ app.use(cors({
     credentials: false,
 }));
 
+app.get('/', (req, res) => {
+    res.status(200).send('🟢 AI PR Reviewer Backend is live and running!');
+});
+
 app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), async (req, res) => {
     const secret = process.env.GITHUB_WEBHOOK_SECRET;
     const rawBody = req.body as Buffer;

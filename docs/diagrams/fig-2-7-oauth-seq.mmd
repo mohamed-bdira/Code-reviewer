@@ -1,0 +1,12 @@
+sequenceDiagram
+  participant U as Platform user
+  participant SPA as React SPA
+  participant API as Auth routes
+  participant GH as GitHub OAuth
+  U->>SPA: Click Sign in with GitHub
+  SPA->>API: Redirect to authorize URL
+  API->>GH: Authorization request
+  GH->>API: Authorization code callback
+  API->>GH: Exchange code for access token
+  API->>API: Upsert user link githubId
+  API->>SPA: Issue JWT session

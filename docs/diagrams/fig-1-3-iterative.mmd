@@ -1,0 +1,9 @@
+flowchart TB
+  plan[Planning and risk identification]
+  build[Implement increment]
+  integrate[Integrate with GitHub and MongoDB]
+  test[Test and harden]
+  plan --> build
+  build --> integrate
+  integrate --> test
+  test --> plan

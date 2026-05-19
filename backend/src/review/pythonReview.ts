@@ -56,8 +56,16 @@ function isLikelyAiRateLimitOrOverload(message: string): boolean {
     return false;
 }
 
+function defaultPythonBin(): string {
+    if (process.env.PYTHON_BIN?.trim()) {
+        return process.env.PYTHON_BIN.trim();
+    }
+    // Debian/Railway Docker images ship python3 only (no `python` symlink).
+    return process.platform === 'win32' ? 'python' : 'python3';
+}
+
 function runPythonReviewOnce(prompt: string, diff: string): Promise<string> {
-    const pythonBin = process.env.PYTHON_BIN || 'python';
+    const pythonBin = defaultPythonBin();
     const scriptPath = resolvePythonScriptPath();
 
     return new Promise((resolve, reject) => {

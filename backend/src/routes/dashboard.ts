@@ -6,6 +6,7 @@ import RepoConfig from '../../models/RepoConfig.js';
 import { requireAuth } from '../auth/middleware.js';
 import { matchFindingsVisibleToUser } from '../findings/findingVisibility.js';
 import { readScheduledScanEnv } from '../scheduler/bugScan.js';
+import { resolveMongoUri } from '../config/mongoUri.js';
 
 type RepoRow = {
     repoFullName: string;
@@ -150,7 +151,7 @@ export function registerDashboardRoutes(app: Express): void {
             generatedAt: new Date().toISOString(),
             serverPort: port,
             mongodb: {
-                uriConfigured: Boolean(process.env.MONGO_URI?.trim()),
+                uriConfigured: Boolean(resolveMongoUri()),
                 connected: mongoose.connection.readyState === 1,
                 readyState: mongoose.connection.readyState,
             },

@@ -17,15 +17,16 @@ import { registerKeyRoutes } from './routes/keys.js';
 import { registerRepoConfigRoutes } from './routes/repoConfigs.js';
 import { startBugScanScheduler } from './scheduler/bugScan.js';
 import { verifyGithubSignature256 } from './githubWebhook.js';
+import { describeMissingMongoEnv, resolveMongoUri } from './config/mongoUri.js';
 
-dotenv.config();
+dotenv.config({ quiet: process.env.NODE_ENV === 'production' });
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
-const mongoUri = process.env.MONGO_URI;
+const mongoUri = resolveMongoUri();
 
 if (!mongoUri) {
-    console.error('MONGO_URI is missing. Set it in the environment before starting the server.');
+    console.error(`[mongo] ${describeMissingMongoEnv()}`);
 } else {
     mongoose
         .connect(mongoUri)
@@ -45,8 +46,19 @@ app.use(cors({
     credentials: false,
 }));
 
-app.get('/', (req, res) => {
-    res.status(200).send('🟢 AI PR Reviewer Backend is live and running!');
+app.get('/', (_req, res) => {
+    const mongoOk = mongoose.connection.readyState === 1;
+    res.status(mongoOk ? 200 : 503).json({
+        ok: mongoOk,
+        service: 'backend-api',
+        mongodb: mongoOk ? 'connected' : 'disconnected',
+        hint: mongoOk ? undefined : describeMissingMongoEnv(),
+    });
+});
+
+app.get('/health', (_req, res) => {
+    const mongoOk = mongoose.connection.readyState === 1;
+    res.status(mongoOk ? 200 : 503).json({ ok: mongoOk, mongodb: mongoOk ? 'connected' : 'disconnected' });
 });
 
 app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -66,11 +78,15 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
         const action = payload.action;
         const ghEvent = String(req.headers['x-github-event'] ?? '');
 
+        console.log(`[webhook] ${ghEvent} action=${String(action ?? '(none)')} delivery=${req.headers['x-github-delivery'] ?? '?'}`);
+
         if (ghEvent !== 'pull_request') {
+            console.log(`[webhook] ignored event type (only pull_request triggers review)`);
             return;
         }
 
         if (action !== 'opened' && action !== 'synchronize') {
+            console.log(`[webhook] ignored pull_request action (only opened/synchronize trigger review)`);
             return;
         }
 
@@ -170,6 +186,7 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
         const effectiveConfig = getEffectiveRepoConfig(config.toObject());
         const octokit = getInstallationOctokit(installationId);
 
+        console.log(`[webhook] starting review for ${repoFullName}#${prNumber} user=${userId} installation=${installationId}`);
         await reviewPullRequest({
             octokit,
             repoOwner,
@@ -185,8 +202,9 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
             ...(mongoUri !== undefined ? { mongoUri } : {}),
             userId,
         });
+        console.log(`[webhook] review finished for ${repoFullName}#${prNumber}`);
     } catch (error) {
-        console.error('Error processing webhook:', error);
+        console.error(`[webhook] review failed for PR processing:`, error);
     }
 });
 

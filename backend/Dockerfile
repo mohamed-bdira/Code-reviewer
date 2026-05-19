@@ -13,6 +13,7 @@ COPY . .
 RUN npm run build
 
 ENV NODE_ENV=production
+ENV PYTHON_BIN=python3
 EXPOSE 3001
 
 CMD ["npm", "run", "start"]

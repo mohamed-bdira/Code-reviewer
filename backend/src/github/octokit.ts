@@ -1,11 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createAppAuth } from '@octokit/auth-app';
 import { Octokit } from 'octokit';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { loadGithubAppPrivateKey } from '../config/githubAppKey.js';
 
 let cachedPrivateKey: string | null = null;
 
@@ -13,16 +8,7 @@ function loadPrivateKey(): string {
     if (cachedPrivateKey) {
         return cachedPrivateKey;
     }
-    const inline = process.env.GITHUB_APP_PRIVATE_KEY?.trim();
-    if (inline) {
-        cachedPrivateKey = inline.replace(/\\n/g, '\n');
-        return cachedPrivateKey;
-    }
-    const envPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
-    const keyPath = envPath
-        ? path.resolve(envPath)
-        : path.resolve(__dirname, '..', '..', '..', 'github-app-key.pem');
-    cachedPrivateKey = fs.readFileSync(keyPath, 'utf8');
+    cachedPrivateKey = loadGithubAppPrivateKey();
     return cachedPrivateKey;
 }
 

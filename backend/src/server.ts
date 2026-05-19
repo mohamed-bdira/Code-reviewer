@@ -18,6 +18,7 @@ import { registerRepoConfigRoutes } from './routes/repoConfigs.js';
 import { startBugScanScheduler } from './scheduler/bugScan.js';
 import { verifyGithubSignature256 } from './githubWebhook.js';
 import { describeMissingMongoEnv, resolveMongoUri } from './config/mongoUri.js';
+import { buildHealthSnapshot, logStartupChecklist } from './config/startupChecks.js';
 
 dotenv.config({ quiet: process.env.NODE_ENV === 'production' });
 
@@ -32,14 +33,20 @@ if (!mongoUri) {
         .connect(mongoUri)
         .then(async () => {
             console.log('Connected to MongoDB');
+            logStartupChecklist(mongoose.connection.readyState);
             try {
                 await RepoConfig.syncIndexes();
             } catch (err) {
                 console.error('[mongo] RepoConfig.syncIndexes failed (check for stale unique indexes):', err);
             }
         })
-        .catch((err) => console.error('MongoDB connection error:', err));
+        .catch((err) => {
+            console.error('MongoDB connection error:', err);
+            logStartupChecklist(mongoose.connection.readyState);
+        });
 }
+
+logStartupChecklist(mongoose.connection.readyState);
 
 app.use(cors({
     origin: (process.env.FRONTEND_BASE_URL ?? 'http://localhost:5173').replace(/\/$/, ''),
@@ -47,18 +54,16 @@ app.use(cors({
 }));
 
 app.get('/', (_req, res) => {
-    const mongoOk = mongoose.connection.readyState === 1;
-    res.status(mongoOk ? 200 : 503).json({
-        ok: mongoOk,
+    const health = buildHealthSnapshot(mongoose.connection.readyState);
+    res.status(health.ok ? 200 : 503).json({
         service: 'backend-api',
-        mongodb: mongoOk ? 'connected' : 'disconnected',
-        hint: mongoOk ? undefined : describeMissingMongoEnv(),
+        ...health,
     });
 });
 
 app.get('/health', (_req, res) => {
-    const mongoOk = mongoose.connection.readyState === 1;
-    res.status(mongoOk ? 200 : 503).json({ ok: mongoOk, mongodb: mongoOk ? 'connected' : 'disconnected' });
+    const health = buildHealthSnapshot(mongoose.connection.readyState);
+    res.status(health.ok ? 200 : 503).json(health);
 });
 
 app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -67,6 +72,7 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
     if (secret) {
         const ok = verifyGithubSignature256(rawBody, req.headers['x-hub-signature-256'], secret);
         if (!ok) {
+            console.warn('[webhook] SKIP: invalid webhook signature (check GITHUB_WEBHOOK_SECRET matches GitHub App)');
             res.status(401).send('Invalid webhook signature');
             return;
         }
@@ -81,12 +87,14 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
         console.log(`[webhook] ${ghEvent} action=${String(action ?? '(none)')} delivery=${req.headers['x-github-delivery'] ?? '?'}`);
 
         if (ghEvent !== 'pull_request') {
-            console.log(`[webhook] ignored event type (only pull_request triggers review)`);
+            console.log(`[webhook] SKIP: event type "${ghEvent}" (only pull_request triggers review)`);
             return;
         }
 
         if (action !== 'opened' && action !== 'synchronize') {
-            console.log(`[webhook] ignored pull_request action (only opened/synchronize trigger review)`);
+            console.log(
+                `[webhook] SKIP: pull_request action "${String(action ?? '(none)')}" (only opened/synchronize trigger review)`,
+            );
             return;
         }
 
@@ -100,7 +108,14 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
         const headSha: string | undefined = payload.pull_request?.head?.sha;
 
         if (!repoOwner || !repoName || !prNumber || !repoFullName) {
-            console.warn('[webhook] missing repository or PR number; skipping');
+            console.warn('[webhook] SKIP: missing repository owner, name, or PR number in payload');
+            return;
+        }
+
+        if (mongoose.connection.readyState !== 1) {
+            console.warn(
+                '[webhook] SKIP: MongoDB not connected — set MONGO_URI on Railway to the same Atlas DB where you linked the GitHub App installation',
+            );
             return;
         }
 
@@ -119,7 +134,7 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
                 );
             } catch (err) {
                 console.warn(
-                    `[webhook] missing installation.id in payload and getRepoInstallation failed for ${repoFullName}. Install the GitHub App on this repo and ensure GITHUB_APP_ID / private key are set:`,
+                    `[webhook] SKIP: installation.id missing and getRepoInstallation failed for ${repoFullName}. Install the GitHub App on this repo and set GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY:`,
                     err,
                 );
                 return;
@@ -130,7 +145,9 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
 
         const install = await Installation.findOne({ installationId }).exec();
         if (!install) {
-            console.warn(`[webhook] no Installation linked for installationId=${installationId}; skipping`);
+            console.warn(
+                `[webhook] SKIP: no Installation linked for installationId=${installationId}. Link the app in the dashboard (Configurations → Install on GitHub) using the same MongoDB as Railway.`,
+            );
             return;
         }
         const userId = String(install.userId);
@@ -139,7 +156,7 @@ app.post('/api/webhooks/github', express.raw({ type: 'application/json' }), asyn
             const hasKey = await userHasActiveApiKey(userId);
             if (!hasKey) {
                 console.warn(
-                    `[webhook] REQUIRE_API_KEY_FOR_REVIEWS: user ${userId} has no active API key; skipping review`,
+                    `[webhook] SKIP: REQUIRE_API_KEY_FOR_REVIEWS is enabled but user ${userId} has no active API key in MongoDB`,
                 );
                 return;
             }

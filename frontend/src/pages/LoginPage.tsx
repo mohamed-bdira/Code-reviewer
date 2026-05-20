@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { apiBrowserUrl } from '../auth/apiFetch';
+import { apiBrowserUrl, getApiBaseUrl } from '../auth/apiFetch';
+import ApiConfigWarning from '../components/ApiConfigWarning';
 
 export default function LoginPage() {
     const { login } = useAuth();
@@ -35,6 +36,8 @@ export default function LoginPage() {
                     <h1 className="text-lg font-semibold text-white">Sign in to PFE Reviewer</h1>
                     <p className="mt-1 text-xs text-slate-500">Use your account to view findings and manage configs.</p>
                 </header>
+
+                <ApiConfigWarning />
 
                 <form className="space-y-3" onSubmit={onSubmit}>
                     <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -88,6 +91,11 @@ export default function LoginPage() {
                     <p className="text-center text-[11px] text-slate-500">
                         Opens GitHub to authorize this app (OAuth), then returns you here.
                     </p>
+                    {getApiBaseUrl() ? (
+                        <p className="break-all text-center text-[10px] text-slate-600">
+                            API: {apiBrowserUrl('/api/auth/github/start')}
+                        </p>
+                    ) : null}
                 </div>
 
                 <p className="text-center text-xs text-slate-500">

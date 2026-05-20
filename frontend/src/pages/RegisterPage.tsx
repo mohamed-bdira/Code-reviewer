@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { apiBrowserUrl } from '../auth/apiFetch';
+import ApiConfigWarning from '../components/ApiConfigWarning';
 
 export default function RegisterPage() {
     const { register } = useAuth();
@@ -42,6 +43,8 @@ export default function RegisterPage() {
                         After signup, install the GitHub App to start receiving AI reviews.
                     </p>
                 </header>
+
+                <ApiConfigWarning />
 
                 <form className="space-y-3" onSubmit={onSubmit}>
                     <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">

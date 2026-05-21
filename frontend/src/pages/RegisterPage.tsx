@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { apiBrowserUrl } from '../auth/apiFetch';
+import { apiBrowserUrl, isApiConfiguredForDeploy } from '../auth/apiFetch';
 import { sanitizePostLoginPath } from '../auth/sanitizePostLoginPath';
-import ApiConfigWarning from '../components/ApiConfigWarning';
 
 export default function RegisterPage() {
     const { register } = useAuth();
@@ -35,6 +34,17 @@ export default function RegisterPage() {
         }
     };
 
+    const onGithub = (e: React.MouseEvent<HTMLAnchorElement>) => {
+        e.preventDefault();
+        if (!isApiConfiguredForDeploy()) {
+            setError(
+                'GitHub sign-in is disabled on this deployment because VITE_API_BASE_URL is not set on Vercel for this environment. Add it (Production + Preview) and redeploy.',
+            );
+            return;
+        }
+        window.location.assign(apiBrowserUrl(`/api/auth/github/start?next=${encodeURIComponent(next)}`));
+    };
+
     return (
         <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-200">
             <div className="w-full max-w-sm space-y-6 rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow">
@@ -44,8 +54,6 @@ export default function RegisterPage() {
                         After signup, install the GitHub App to start receiving AI reviews.
                     </p>
                 </header>
-
-                <ApiConfigWarning />
 
                 <form className="space-y-3" onSubmit={onSubmit}>
                     <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -99,6 +107,7 @@ export default function RegisterPage() {
                 <div className="space-y-2 border-t border-slate-800 pt-4">
                     <a
                         href={apiBrowserUrl(`/api/auth/github/start?next=${encodeURIComponent(next)}`)}
+                        onClick={onGithub}
                         target="_self"
                         rel="nofollow"
                         className="block w-full rounded border border-slate-600 bg-slate-800 px-4 py-2 text-center text-sm font-medium text-white hover:bg-slate-700"

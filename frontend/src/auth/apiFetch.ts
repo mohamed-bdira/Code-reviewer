@@ -138,10 +138,19 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
         }
     }
     if (!res.ok) {
-        const message =
-            (data && typeof data === 'object' && 'error' in data && typeof (data as { error: unknown }).error === 'string'
+        const serverMessage =
+            data && typeof data === 'object' && 'error' in data && typeof (data as { error: unknown }).error === 'string'
                 ? (data as { error: string }).error
-                : null) ?? `HTTP ${res.status}`;
+                : null;
+        // When the build has no backend URL, /api/* hits the static SPA host and returns 404 or 405
+        // with no JSON body. Replace the bare "HTTP 405" with something actionable.
+        const looksLikeMissingBackend =
+            !serverMessage && !useSameOriginApiProxy() && !BASE() && (res.status === 404 || res.status === 405);
+        const message =
+            serverMessage ??
+            (looksLikeMissingBackend
+                ? 'This deployment has no backend configured. Set VITE_API_BASE_URL on Vercel for the Preview/Production environment that serves this URL, then redeploy.'
+                : `HTTP ${res.status}`);
         throw { status: res.status, message } as ApiError;
     }
     return data as T;

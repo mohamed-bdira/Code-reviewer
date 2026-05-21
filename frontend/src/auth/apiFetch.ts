@@ -1,23 +1,19 @@
-function useSameOriginApiProxy(): boolean {
-    return import.meta.env.VITE_API_USE_PROXY === 'true';
-}
-
-const BASE = (): string => {
-    if (useSameOriginApiProxy()) {
-        return '';
-    }
-    return (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
-};
+const BASE = (): string => (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
 export function getApiBaseUrl(): string {
     return BASE();
 }
 
+/**
+ * True when this build can reach a backend:
+ * - In dev (`npm run dev`) Vite proxies /api -> localhost:3001 even with no env var.
+ * - In production (Vercel) we require VITE_API_BASE_URL to point at the Railway host.
+ */
 export function isApiConfiguredForDeploy(): boolean {
-    return useSameOriginApiProxy() || Boolean(BASE());
+    return Boolean(BASE()) || import.meta.env.DEV === true;
 }
 
-/** Full URL for `<a href>` navigation. Uses `VITE_API_BASE_URL` when set; otherwise same-origin paths (Vite dev proxy). */
+/** Full URL for `<a href>` navigation. */
 export function apiBrowserUrl(pathWithQuery: string): string {
     const base = BASE();
     let path = pathWithQuery.startsWith('/') ? pathWithQuery : `/${pathWithQuery}`;
@@ -118,8 +114,8 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
     try {
         res = await fetch(`${BASE()}${path}`, { ...init, headers });
     } catch {
-        const hint = useSameOriginApiProxy()
-            ? 'Cannot reach the API through Vercel. Check Railway is up and VITE_API_BASE_URL on Vercel matches your Railway host, then redeploy.'
+        const hint = BASE()
+            ? `Cannot reach the backend at ${BASE()}. Check that the Railway service is running and that FRONTEND_BASE_URL on Railway exactly matches this site's origin (CORS).`
             : 'Cannot reach the API. Set VITE_API_BASE_URL on Vercel to your Railway URL (no /api suffix) and redeploy, or use local dev with npm run dev.';
         throw { status: 0, message: hint } as ApiError;
     }
@@ -145,11 +141,11 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
         // When the build has no backend URL, /api/* hits the static SPA host and returns 404 or 405
         // with no JSON body. Replace the bare "HTTP 405" with something actionable.
         const looksLikeMissingBackend =
-            !serverMessage && !useSameOriginApiProxy() && !BASE() && (res.status === 404 || res.status === 405);
+            !serverMessage && !BASE() && (res.status === 404 || res.status === 405);
         const message =
             serverMessage ??
             (looksLikeMissingBackend
-                ? 'This deployment has no backend configured. Set VITE_API_BASE_URL on Vercel for the Preview/Production environment that serves this URL, then redeploy.'
+                ? 'This deployment has no backend configured. Set VITE_API_BASE_URL on Vercel to your Railway URL (no trailing slash, no /api), then redeploy.'
                 : `HTTP ${res.status}`);
         throw { status: res.status, message } as ApiError;
     }

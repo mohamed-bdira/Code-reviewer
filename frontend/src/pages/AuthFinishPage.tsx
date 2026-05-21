@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { sanitizePostLoginPath } from '../auth/sanitizePostLoginPath';
 
 export default function AuthFinishPage() {
     const { setSessionFromToken } = useAuth();
@@ -10,7 +11,7 @@ export default function AuthFinishPage() {
 
     useEffect(() => {
         const token = params.get('token');
-        const next = params.get('next') ?? '/';
+        const next = sanitizePostLoginPath(params.get('next'));
         if (!token) {
             setError('Missing token from GitHub OAuth callback');
             return;

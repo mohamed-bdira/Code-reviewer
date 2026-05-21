@@ -20,7 +20,11 @@ export function isApiConfiguredForDeploy(): boolean {
 /** Full URL for `<a href>` navigation. Uses `VITE_API_BASE_URL` when set; otherwise same-origin paths (Vite dev proxy). */
 export function apiBrowserUrl(pathWithQuery: string): string {
     const base = BASE();
-    const path = pathWithQuery.startsWith('/') ? pathWithQuery : `/${pathWithQuery}`;
+    let path = pathWithQuery.startsWith('/') ? pathWithQuery : `/${pathWithQuery}`;
+    // Never emit protocol-relative URLs (//api/...) — browsers treat them as a different host.
+    if (path.startsWith('//')) {
+        path = `/${path.replace(/^\/+/, '')}`;
+    }
     if (!base) {
         return path;
     }

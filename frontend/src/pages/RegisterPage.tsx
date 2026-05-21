@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { apiBrowserUrl } from '../auth/apiFetch';
+import { sanitizePostLoginPath } from '../auth/sanitizePostLoginPath';
 import ApiConfigWarning from '../components/ApiConfigWarning';
 
 export default function RegisterPage() {
     const { register } = useAuth();
     const navigate = useNavigate();
     const [params] = useSearchParams();
-    const next = params.get('next') ?? '/';
+    const next = sanitizePostLoginPath(params.get('next'));
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');

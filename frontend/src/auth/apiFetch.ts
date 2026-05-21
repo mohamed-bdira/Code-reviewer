@@ -1,7 +1,20 @@
-const BASE = (): string => (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+function useSameOriginApiProxy(): boolean {
+    return import.meta.env.VITE_API_USE_PROXY === 'true';
+}
+
+const BASE = (): string => {
+    if (useSameOriginApiProxy()) {
+        return '';
+    }
+    return (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+};
 
 export function getApiBaseUrl(): string {
     return BASE();
+}
+
+export function isApiConfiguredForDeploy(): boolean {
+    return useSameOriginApiProxy() || Boolean(BASE());
 }
 
 /** Full URL for `<a href>` navigation. Uses `VITE_API_BASE_URL` when set; otherwise same-origin paths (Vite dev proxy). */
@@ -97,7 +110,15 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
     }
     headers.set('Accept', 'application/json');
 
-    const res = await fetch(`${BASE()}${path}`, { ...init, headers });
+    let res: Response;
+    try {
+        res = await fetch(`${BASE()}${path}`, { ...init, headers });
+    } catch {
+        const hint = useSameOriginApiProxy()
+            ? 'Cannot reach the API through Vercel. Check Railway is up and VITE_API_BASE_URL on Vercel matches your Railway host, then redeploy.'
+            : 'Cannot reach the API. Set VITE_API_BASE_URL on Vercel to your Railway URL (no /api suffix) and redeploy, or use local dev with npm run dev.';
+        throw { status: 0, message: hint } as ApiError;
+    }
     if (res.status === 401) {
         if (onUnauthorized) onUnauthorized();
         const message = await safeError(res);

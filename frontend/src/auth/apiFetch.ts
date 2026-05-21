@@ -1,4 +1,12 @@
-const BASE = (): string => (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+const BASE = (): string => {
+    const raw = (import.meta.env.VITE_API_BASE_URL ?? '').trim().replace(/\/$/, '');
+    if (!raw) return '';
+    if (/^https?:\/\//i.test(raw)) return raw;
+    // Be forgiving: a value like "foo.up.railway.app" is almost certainly meant to be HTTPS.
+    // Without this, the browser resolves the scheme-less value relative to the current origin
+    // and the API call ends up at https://<vercel-host>/<railway-host>/api/... (404/405).
+    return `https://${raw}`;
+};
 
 export function getApiBaseUrl(): string {
     return BASE();

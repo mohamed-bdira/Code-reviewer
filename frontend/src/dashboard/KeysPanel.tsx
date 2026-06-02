@@ -72,7 +72,7 @@ export default function KeysPanel() {
                         Generate a key here (session login), then paste it on the <strong className="text-slate-300">unlock</strong>{' '}
                         screen or use <strong className="text-slate-300">Use this key to unlock dashboard</strong> below. Scripts
                         and CI use{' '}
-                        <code className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-200">Authorization: Bearer pfe_…</code>
+                        <code className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-200">Authorization: Bearer &lt;key&gt;</code>
                     </p>
                 </div>
                 <button
@@ -238,7 +238,7 @@ export default function KeysPanel() {
                     reviews wait until you have created at least one key in this list.
                 </p>
                 <pre className="mt-1 overflow-x-auto rounded bg-slate-950 p-3 text-emerald-300">
-                    {`curl -H "Authorization: Bearer pfe_xxxxxxxx..." \\
+                    {`curl -H "Authorization: Bearer <your-api-key>" \\
   ${window.location.origin}/api/findings?limit=10`}
                 </pre>
             </details>

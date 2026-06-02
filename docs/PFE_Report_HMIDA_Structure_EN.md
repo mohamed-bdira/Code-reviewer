@@ -19,7 +19,7 @@
 | | Table of Contents | [p. …] |
 | | List of Figures | [p. …] |
 | | List of Tables | [p. …] |
-| | List of Acronyms | [p. …] |
+| | Glossary | [p. …] |
 | **GI** | **General Introduction** | [p. …] |
 | **1** | **General context** | [p. …] |
 | 1.1 | Introduction | [p. …] |
@@ -109,31 +109,16 @@
 
 ---
 
-## List of Acronyms
+## Glossary
 
-| Acronym | Definition |
-|---------|------------|
-| API | Application Programming Interface |
-| AST | Abstract Syntax Tree |
-| CI/CD | Continuous Integration / Continuous Delivery |
-| CORS | Cross-Origin Resource Sharing |
-| CRUD | Create, Read, Update, Delete |
-| GUI | Graphical User Interface |
-| HMAC | Hash-based Message Authentication Code |
-| HTTP | Hypertext Transfer Protocol |
-| IT | Information Technology |
-| JWT | JSON Web Token |
-| LLM | Large Language Model |
-| NPM | Node Package Manager (ecosystem) |
-| OAuth | Open Authorization |
-| ORM | Object-Relational Mapping (here: ODM with Mongoose) |
-| PR | Pull Request |
-| REST | Representational State Transfer |
-| SHA | Secure Hash Algorithm |
-| SPA | Single-Page Application |
-| SSE | Server-Sent Events |
-| UI | User Interface |
-| URI | Uniform Resource Identifier |
+Acronyms and technical terms for this report are maintained in **[Glossary_EN.md](Glossary_EN.md)** (master list) and compiled for LaTeX as **[Glossary_EN.tex](Glossary_EN.tex)**. The main report includes them via `\input{Glossary_EN}`.
+
+Sections:
+
+1. **Acronyms and abbreviations** — API, AST, CI/CD, CORS, CRUD, FR, GUI, HMAC, HTTP, HTTPS, IT, JSON, JWT, LLM, NFR, NPM, OAuth, ODM, ORM, PEM, PR, REST, RSA, SHA, SPA, SSE, UI, URI.
+2. **Technical terms** — project vocabulary (e.g. finding, enforcer, segmentation, guardrails, RepoConfig, webhook, Python bridge).
+
+*For the full definitions table, open `Glossary_EN.md`.*
 
 ---
 

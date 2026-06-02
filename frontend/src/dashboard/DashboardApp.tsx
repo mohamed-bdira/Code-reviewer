@@ -78,12 +78,12 @@ export default function DashboardApp() {
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200">
             <div className="flex min-h-screen">
-                <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-900/60">
+                <aside className="sticky top-0 flex h-screen w-56 shrink-0 flex-col overflow-hidden border-r border-slate-800 bg-slate-900/60">
                     <div className="border-b border-slate-800 px-4 py-5">
                         <h1 className="text-sm font-semibold leading-tight text-white">PFE dashboard</h1>
                         <p className="mt-1 text-xs text-slate-500">Live · {connected ? 'connected' : 'reconnecting…'}</p>
                     </div>
-                    <nav className="flex flex-1 flex-col gap-0.5 p-2">
+                    <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
                         {SECTIONS.map((s) => (
                             <button
                                 key={s.id}
@@ -108,7 +108,7 @@ export default function DashboardApp() {
                             </button>
                         ))}
                     </nav>
-                    <div className="border-t border-slate-800 px-4 py-3 text-xs text-slate-500">
+                    <div className="shrink-0 border-t border-slate-800 px-4 py-3 text-xs text-slate-500">
                         <p className="truncate text-slate-300">{user?.email}</p>
                         {user?.githubLogin && (
                             <p className="truncate text-slate-500">@{user.githubLogin}</p>

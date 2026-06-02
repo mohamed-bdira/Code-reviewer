@@ -38,8 +38,8 @@ export default function DashboardUnlockGate({ children }: Props) {
     const onSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const trimmed = input.trim();
-        if (!trimmed.startsWith('pfe_')) {
-            setError('Key must start with pfe_');
+        if (trimmed.length < 8) {
+            setError('Paste the full API key from the keys page.');
             return;
         }
         const sessionJwt = getStoredToken();
@@ -74,8 +74,7 @@ export default function DashboardUnlockGate({ children }: Props) {
                 <h1 className="text-lg font-semibold text-white">Unlock dashboard</h1>
                 <p className="mt-2 text-sm text-slate-400">
                     Findings, summary, and configuration use your <strong className="text-slate-300">API key</strong> (not only
-                    your login). Generate one under <em>API keys</em>, then paste the full <code className="text-emerald-300">pfe_…</code>{' '}
-                    secret here. Key management still uses your session.
+                    your login). Generate one under <em>API keys</em>, then paste the full secret here. Key management still uses your session.
                 </p>
                 <ul className="mt-3 list-inside list-disc space-y-1 text-xs text-slate-500">
                     <li>
@@ -100,7 +99,7 @@ export default function DashboardUnlockGate({ children }: Props) {
                             autoComplete="off"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
-                            placeholder="pfe_…"
+                            placeholder="Paste your API key"
                             className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-white"
                         />
                     </label>

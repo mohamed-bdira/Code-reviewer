@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import { sanitizePostLoginPath } from './sanitizePostLoginPath';
 
 export default function RequireAuth({ children }: { children: ReactNode }) {
     const { user, initializing } = useAuth();
@@ -15,8 +16,8 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
     }
 
     if (!user) {
-        const next = encodeURIComponent(location.pathname + location.search);
-        return <Navigate to={`/login?next=${next}`} replace />;
+        const next = sanitizePostLoginPath(location.pathname + location.search);
+        return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
     }
 
     return <>{children}</>;

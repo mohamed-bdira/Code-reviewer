@@ -4,6 +4,7 @@ import User from '../../models/User.js';
 import { hashPassword, verifyPassword } from '../auth/passwords.js';
 import { signSession } from '../auth/tokens.js';
 import { requireAuth } from '../auth/middleware.js';
+import { sanitizePostLoginPath } from '../auth/sanitizePostLoginPath.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PW = 8;
@@ -137,8 +138,7 @@ export function registerAuthRoutes(app: Express): void {
         url.searchParams.set('redirect_uri', redirect);
         url.searchParams.set('scope', 'read:user user:email');
         url.searchParams.set('allow_signup', 'true');
-        const rawNext = typeof req.query.next === 'string' ? req.query.next : '/';
-        const next = rawNext.startsWith('/') ? rawNext : '/';
+        const next = sanitizePostLoginPath(typeof req.query.next === 'string' ? req.query.next : '/');
         url.searchParams.set('state', next);
         res.redirect(302, url.toString());
     });
@@ -287,7 +287,7 @@ export function registerAuthRoutes(app: Express): void {
             await user.save();
 
             const sessionToken = signSession({ sub: String(user._id), email: user.email });
-            const next = stateParam.startsWith('/') ? stateParam : '/';
+            const next = sanitizePostLoginPath(stateParam);
             const redirect = new URL(`${frontendBase()}/auth/finish`);
             redirect.searchParams.set('token', sessionToken);
             redirect.searchParams.set('next', next);

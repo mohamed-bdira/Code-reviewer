@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 
 MD_PATH = Path(__file__).with_name("PFE_Report_HMIDA_Structure_EN.md")
+GLOSSARY_MD_PATH = Path(__file__).with_name("Glossary_EN.md")
+GLOSSARY_TEX_PATH = Path(__file__).with_name("Glossary_EN.tex")
 OUT_PATH = Path(__file__).with_name("PFE_Report_HMIDA_Structure_EN.tex")
 
 HEADER = r"""\documentclass[11pt,a4paper]{report}
@@ -110,33 +112,73 @@ def simple_table(rows: list[list[str]]) -> str:
     return "\n".join(o) + "\n"
 
 
-def emit_acronyms(lines: list[str], start: int) -> tuple[str, int]:
+def parse_md_table_rows(lines: list[str], start: int) -> tuple[list[list[str]], int]:
+    """Read markdown table rows from start until --- or # heading."""
     rows: list[list[str]] = []
     i = start
     while i < len(lines):
         ln = lines[i]
-        if ln.strip() == "---" or re.match(r"^#\s+", ln):
+        if ln.strip() == "---" or re.match(r"^#{1,3}\s+", ln):
             break
         if ln.strip().startswith("|") and "|" in ln[2:]:
             parts = [p.strip() for p in ln.strip().strip("|").split("|")]
-            if len(parts) >= 2 and parts[0] and not parts[0].startswith("-"):
-                rows.append(parts[:2])
+            if len(parts) >= 2 and parts[0] and not re.match(r"^[\s\-:|]+$", parts[0]):
+                rows.append(parts)
         i += 1
-    t = [r"\chapter*{List of Acronyms}", r"\addcontentsline{toc}{chapter}{List of Acronyms}"]
-    for abbr, df in rows[1:]:  # skip header
-        if abbr.replace("-", "").strip() == "":
-            continue
-        if abbr.strip() == "Acronym":
-            continue
-        t.append(r"\noindent\textbf{" + esc(abbr) + r"} --- " + fmt_inline(df) + r"\par\smallskip")
-    return "\n".join(t) + "\n\n", i
+    return rows, i
 
 
-def extract_acronyms_tex(lines: list[str]) -> str:
-    for i, ln in enumerate(lines):
-        if ln.startswith("## List of Acronyms"):
-            tex, _ = emit_acronyms(lines, i + 1)
-            return tex
+def emit_glossary_entry(term: str, definition: str) -> str:
+    return r"\item \textbf{" + esc(term) + r"}: " + fmt_inline(definition)
+
+
+def emit_glossary_from_md(md_path: Path = GLOSSARY_MD_PATH) -> str:
+    """Build Glossary chapter LaTeX from Glossary_EN.md (acronyms + technical terms)."""
+    if not md_path.is_file():
+        return ""
+    lines = md_path.read_text(encoding="utf-8").splitlines()
+    parts = [r"\chapter*{Glossary}", r"\addcontentsline{toc}{chapter}{Glossary}"]
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        if ln.strip() == "## Acronyms and abbreviations":
+            parts.append("")
+            parts.append(r"\section*{Acronyms and abbreviations}")
+            parts.append(r"\begin{itemize}")
+            rows, i = parse_md_table_rows(lines, i + 1)
+            for row in rows[1:]:
+                if row[0] in ("Acronym", "Term"):
+                    continue
+                parts.append(emit_glossary_entry(row[0], row[1]))
+            parts.append(r"\end{itemize}")
+            i += 1
+            continue
+        if ln.strip() == "## Technical terms":
+            parts.append("")
+            parts.append(r"\section*{Technical terms}")
+            parts.append(r"\begin{itemize}")
+            rows, i = parse_md_table_rows(lines, i + 1)
+            for row in rows[1:]:
+                if row[0] in ("Acronym", "Term"):
+                    continue
+                parts.append(emit_glossary_entry(row[0], row[1]))
+            parts.append(r"\end{itemize}")
+            i += 1
+            continue
+        i += 1
+    return "\n".join(parts) + "\n\n"
+
+
+def write_glossary_tex(md_path: Path = GLOSSARY_MD_PATH, out_path: Path = GLOSSARY_TEX_PATH) -> None:
+    tex = emit_glossary_from_md(md_path)
+    if tex:
+        out_path.write_text(tex, encoding="utf-8")
+
+
+def extract_glossary_tex() -> str:
+    """Prefer standalone Glossary_EN.md; fall back to legacy List of Acronyms in structure MD."""
+    if GLOSSARY_MD_PATH.is_file():
+        return emit_glossary_from_md()
     return ""
 
 
@@ -148,13 +190,13 @@ def body_start(lines: list[str]) -> int:
 
 
 def main() -> None:
+    write_glossary_tex()
     raw = MD_PATH.read_text(encoding="utf-8").splitlines()
-    acro = extract_acronyms_tex(raw)
     start = body_start(raw)
     lines = raw[start:]
     parts: list[str] = [HEADER]
-    if acro:
-        parts.append(acro)
+    if GLOSSARY_TEX_PATH.is_file():
+        parts.append(r"\input{Glossary_EN}" + "\n\n")
     i = 0
     in_fence = False
     fence: list[str] = []
@@ -297,6 +339,8 @@ def main() -> None:
     body = "".join(parts)
     OUT_PATH.write_text(body + FOOTER, encoding="utf-8")
     print("Wrote", OUT_PATH)
+    if GLOSSARY_TEX_PATH.is_file():
+        print("Wrote", GLOSSARY_TEX_PATH)
 
 
 if __name__ == "__main__":

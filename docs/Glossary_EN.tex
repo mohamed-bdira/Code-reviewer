@@ -1,0 +1,90 @@
+\chapter*{Glossary}
+\addcontentsline{toc}{chapter}{Glossary}
+
+\section*{Acronyms and abbreviations}
+\begin{itemize}
+\item \textbf{API}: Application Programming Interface; HTTP JSON endpoints under \texttt{/api/*} on the Express backend.
+\item \textbf{AST}: Abstract Syntax Tree; optional static analysis hook when \texttt{useAstGrep} is enabled on a repository configuration.
+\item \textbf{CI/CD}: Continuous Integration / Continuous Delivery; referenced in dashboard context for linking repositories to engineering workflows.
+\item \textbf{CORS}: Cross-Origin Resource Sharing; allows the Vite SPA to call the API from a separate origin in development and production.
+\item \textbf{CRUD}: Create, Read, Update, Delete; applied to repository configurations, API keys, and related dashboard operations.
+\item \textbf{FR}: Functional Requirement; numbered requirement IDs (e.g. FR-07) in Chapter 2.
+\item \textbf{GUI}: Graphical User Interface; the React dashboard panels.
+\item \textbf{HMAC}: Hash-based Message Authentication Code; used to verify GitHub webhook payloads via \texttt{X-Hub-Signature-256}.
+\item \textbf{HTTP}: Hypertext Transfer Protocol; transport for REST API, webhooks, and the Python bridge outbound calls.
+\item \textbf{HTTPS}: HTTP over TLS; used for production API, frontend, and Gemini bridge requests.
+\item \textbf{IT}: Information Technology.
+\item \textbf{JSON}: JavaScript Object Notation; request/response bodies and structured AI output parsed by the enforcer.
+\item \textbf{JWT}: JSON Web Token; session credential issued after email/password or GitHub OAuth login for protected APIs.
+\item \textbf{LLM}: Large Language Model; probabilistic model invoked through the Python bridge for patch analysis.
+\item \textbf{NFR}: Non-Functional Requirement; quality-attribute IDs (e.g. NFR-03) in Chapter 2.
+\item \textbf{NPM}: Node Package Manager ecosystem; dependency and script management for backend and frontend.
+\item \textbf{OAuth}: Open Authorization; GitHub OAuth flow for sign-in (\texttt{GITHUB\_OAUTH\_*}).
+\item \textbf{ODM}: Object-Document Mapper; Mongoose maps TypeScript document shapes to MongoDB collections.
+\item \textbf{ORM}: Object-Relational Mapping; in this project the data layer is document-oriented (see ODM).
+\item \textbf{PEM}: Privacy-Enhanced Mail encoding format for the GitHub App RSA private key (\texttt{GITHUB\_APP\_PRIVATE\_KEY}).
+\item \textbf{PR}: Pull Request; GitHub change proposal that triggers webhook-driven review.
+\item \textbf{REST}: Representational State Transfer; style of the HTTP API exposed by Express routes.
+\item \textbf{RSA}: Public-key algorithm used for GitHub App authentication with the installation token flow.
+\item \textbf{SHA}: Secure Hash Algorithm; commit SHAs in webhook payloads and SHA-256 dedupe keys for findings.
+\item \textbf{SPA}: Single-Page Application; React client with client-side routing.
+\item \textbf{SSE}: Server-Sent Events; one-way stream from \texttt{GET /api/events} to refresh the dashboard.
+\item \textbf{UI}: User Interface.
+\item \textbf{URI}: Uniform Resource Identifier; MongoDB connection string, OAuth redirect URIs, API base URLs.
+\end{itemize}
+
+\section*{Technical terms}
+\begin{itemize}
+\item \textbf{AI-assisted review}: Automated pull request analysis orchestrated by the backend: diff fetch, filtering, segmentation, Python bridge invocation, parsing, persistence, and optional GitHub posting. AI advises; humans retain merge authority.
+\item \textbf{AI foundation}: The set of AI capabilities, constraints, and guardrails (probabilistic output, hallucination risk, payload limits) that shape requirements and architecture.
+\item \textbf{API key}: Operator-issued credential with \texttt{pfe\_} prefix; only a bcrypt hash is stored. Optional gate \texttt{REQUIRE\_API\_KEY\_FOR\_REVIEWS} for automated review execution.
+\item \textbf{Assistive reviewer}: Role assigned to the AI in the platform: embedded in the GitHub App workflow, not a standalone merge authority.
+\item \textbf{Bug scan}: Scheduled workflow that re-scans open pull requests for configured repositories (\texttt{scheduler/bugScan.ts}).
+\item \textbf{Code review}: Human or automated examination of a change set; this platform automates review assistance and posts structured feedback to GitHub when configured.
+\item \textbf{Conservative publication logic}: Posting strategy that caps review body size, inline comment count, and payload estimates to avoid GitHub secondary rate limits.
+\item \textbf{Context window}: Practical limit on how much diff text a language model can analyze per invocation; motivates segmentation and filtering.
+\item \textbf{Dedupe key}: SHA-256 hash identifying a finding across review runs; used for upsert and \texttt{lastSeenAt} updates.
+\item \textbf{Diff hunk}: Contiguous region of a unified diff (file and line range) used to map findings to inline GitHub review comments.
+\item \textbf{Diff preprocessing and filtering}: Removal of noise from PR patches (lockfiles, excluded paths, path prefixes) before AI analysis.
+\item \textbf{End-to-end review pipeline}: Flow from PR event on GitHub through webhook, review service, persistence, publication, and dashboard notification.
+\item \textbf{Enforcement level}: Repository policy severity: \texttt{warning} or \texttt{error}, stored on \texttt{RepoConfig}.
+\item \textbf{Enforcer}: Parser that converts the AI bridge JSON-shaped response into scores, blockers, bugs, and merge-readiness fields.
+\item \textbf{Express}: Node.js HTTP framework hosting REST routes, webhook raw body handling, and middleware.
+\item \textbf{External dependency risk}: Operational risk from model provider availability, latency, and rate limits affecting review quality.
+\item \textbf{Finding}: Structured review issue (category, file path, description) persisted as \texttt{PrReviewFinding} and shown in the dashboard.
+\item \textbf{Focus areas}: Tags on \texttt{RepoConfig} directing review emphasis (e.g. security, style, usability, custom).
+\item \textbf{Functional requirement}: Statement of what the system must do (FR-01--FR-16 in Chapter 2).
+\item \textbf{GitHub App}: GitHub integration registered as an App: installation tokens, webhooks, and repository access via Octokit.
+\item \textbf{GitHub App installation}: Link between a user account and an installed App instance on a GitHub account or organization.
+\item \textbf{Google Gemini}: Large language model accessed through the project Python script stream endpoint (not framed as official Google Cloud SDK integration).
+\item \textbf{Guardrails}: Safeguards around AI: diff filtering, segmentation, retry/backoff, structured parsing, findings persistence, conservative GitHub posting.
+\item \textbf{Hallucination}: Model output that plausibly claims a defect that is incorrect or not supported by the diff.
+\item \textbf{HMAC signature validation}: Comparison of computed HMAC-SHA256 digest with \texttt{X-Hub-Signature-256} using a timing-safe equal check.
+\item \textbf{Inline review comment}: GitHub review comment anchored to a file and line, derived from finding locations and diff hunks.
+\item \textbf{Iterative methodology}: Incremental delivery through planning, implementation, integration, validation, and feedback cycles.
+\item \textbf{Lockfile filtering}: Exclusion of dependency lockfiles from the diff sent to the AI to reduce noise and segment count.
+\item \textbf{Merge minimum score}: Integer 0--100 on \texttt{RepoConfig}; threshold used with enforcer scores for merge readiness.
+\item \textbf{Merge readiness}: Evaluation of whether a PR meets configured score and blocker rules, including security veto logic.
+\item \textbf{MongoDB}: Document database storing users, installations, configurations, API keys, and findings.
+\item \textbf{Mongoose}: ODM library defining schemas, indexes, and models for MongoDB collections.
+\item \textbf{Multi-tenant}: Logical isolation of each operator's installations, configurations, keys, and findings via \texttt{userId}.
+\item \textbf{Non-functional requirement}: Quality-attribute requirement (security, reliability, performance, etc.; NFR-01--NFR-14).
+\item \textbf{Octokit}: Official GitHub REST client used for diffs, reviews, and installation-authenticated API calls.
+\item \textbf{Payload limitations}: Constraint that large PR diffs exceed model context; addressed by filtering and segmentation.
+\item \textbf{PFE review platform}: The full-stack system documented in this report (repository \textit{Code-reviewer}, title \textit{PFE --- Review findings}).
+\item \textbf{Posting strategy}: Component that decides how review summaries and inline comments are packaged and sent to GitHub within size limits.
+\item \textbf{Probabilistic output}: Non-deterministic model responses that may differ for similar inputs across runs.
+\item \textbf{Pull request}: GitHub mechanism to propose and review code changes; webhook actions \texttt{opened} and \texttt{synchronize} trigger review.
+\item \textbf{Python bridge}: Node.js subprocess (\texttt{pythonExploit.py}) that sends prompts and diff segments to the Gemini stream endpoint.
+\item \textbf{Rate limiting}: Throttling and retries on AI HTTP errors (429/502/503/504) and GitHub secondary rate limits on review creation.
+\item \textbf{React}: JavaScript UI library for the operator dashboard and authentication pages.
+\item \textbf{Repo configuration (RepoConfig)}: Per-repository policy document: focus areas, enforcement level, custom rules, merge minimum score, optional AST-grep flag.
+\item \textbf{Retry with backoff}: Exponential or stepped delay between retries on transient AI or GitHub API failures.
+\item \textbf{Scheduled scan}: Same as bug scan; periodic re-review of open PRs per configured repository.
+\item \textbf{Segmentation}: Splitting a filtered unified diff into bounded chunks for sequential AI calls, with caps on segment size and count.
+\item \textbf{Server-Sent Events}: Browser \texttt{EventSource} subscription to \texttt{/api/events} for live dashboard updates after backend events.
+\item \textbf{Structured parsing}: Extracting JSON from model output and normalizing it before upserting findings or posting reviews.
+\item \textbf{Unified diff}: Textual patch format returned by GitHub for a PR; filtered and segmented before AI analysis.
+\item \textbf{Vite}: Frontend build tool and dev server for the React SPA.
+\item \textbf{Webhook}: HTTP callback from GitHub to \texttt{POST /api/webhooks/github} carrying \texttt{pull\_request} events.
+\end{itemize}

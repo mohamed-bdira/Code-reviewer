@@ -1,0 +1,398 @@
+\chapter{2 Identification of Requirements}
+
+\section{2.1 Introduction}
+
+This chapter identifies and formalizes the requirements of the AI-assisted pull request review platform from the implemented system behavior. The objective is to transform technical implementation details into a structured requirements specification that can guide validation, maintenance, and future evolution.
+
+The chapter begins by presenting the \textbf{AI foundation} that shapes system capabilities and constraints. It then justifies the adopted \textbf{iterative methodology} and details project phases. Based on this methodological and technical context, the chapter specifies \textbf{functional requirements (FR)} and \textbf{non-functional requirements (NFR)}. Finally, the chapter models system behavior through a \textbf{general use case diagram}, \textbf{sequence diagrams}, a \textbf{class diagram}, and an \textbf{end-to-end review pipeline} diagram before concluding.
+
+\section{2.2 AI Foundation}
+
+\subsection{2.2.1 Role of AI in the system}
+
+The platform uses AI as an \textbf{assistive reviewer} embedded in the GitHub application workflow. In practical terms, the user communicates with a GitHub application that provides AI-assisted review capabilities, rather than directly interacting with a standalone AI tool. In the implemented architecture, incoming pull request events trigger a review workflow that:
+\begin{itemize}
+    \item retrieves and filters PR diffs;
+    \item sends review prompts and filtered patches to a Python bridge;
+    \item obtains model-generated analysis;
+    \item parses structured outputs;
+    \item persists findings and optionally posts comments/reviews back to GitHub.
+\end{itemize}
+
+Therefore, AI is integrated as a decision-support component, not as an autonomous merge authority. Human maintainers retain final responsibility for approval or rejection decisions.
+
+\subsection{2.2.2 AI-specific constraints and risks}
+
+The implemented solution explicitly acknowledges major AI limitations:
+\begin{itemize}
+    \item \textbf{Probabilistic outputs}: model responses are non-deterministic and may vary for similar inputs.
+    \item \textbf{Hallucination risk}: AI can produce plausible but incorrect defect claims.
+    \item \textbf{Payload limitations}: large PR diffs exceed practical context windows; segmentation is required.
+    \item \textbf{External dependency risk}: model availability, latency, and rate-limit behavior impact response quality.
+\end{itemize}
+
+\subsection{2.2.3 Guardrails implemented around AI}
+
+To make AI behavior operationally acceptable, the platform applies several safeguards:
+\begin{itemize}
+    \item \textbf{Diff preprocessing and filtering} to remove noise and restrict analysis to relevant changed files.
+    \item \textbf{Segmentation strategy} for large patches, with bounded segment size and segment count.
+    \item \textbf{Retry/backoff policy} for transient AI invocation failures.
+    \item \textbf{Structured parsing} before persistence/publication, reducing uncontrolled free-text propagation.
+    \item \textbf{Findings persistence} in MongoDB for traceability and auditability.
+    \item \textbf{Conservative publication logic} to respect GitHub posting constraints.
+\end{itemize}
+
+These safeguards justify treating AI as a high-value analysis service enclosed in deterministic orchestration logic.
+
+\section{2.3 Work Methodology: Iterative Methodology}
+
+\subsection{2.3.1 Justification of iterative methodology}
+
+An \textbf{iterative and incremental methodology} is appropriate for this project because:
+\begin{itemize}
+    \item requirements evolve as real integration constraints emerge (GitHub API behavior, webhook payload variation, AI response quality);
+    \item the project combines multiple subsystems (frontend, backend, database, GitHub application integration, and AI review bridge), making progressive integration safer than single-pass implementation;
+    \item each cycle enables measurable validation (auth correctness, webhook handling, review output quality, dashboard usability);
+    \item operational risks (security, rate limits, error handling) are progressively hardened.
+\end{itemize}
+
+The approach reduces rework by validating high-risk components early and by continuously refining requirements through implementation feedback.
+
+\subsection{2.3.2 Project phases and iteration cycles}
+
+The realized project progression can be summarized in recurrent phases:
+\begin{enumerate}
+    \item \textbf{Planning and requirement refinement}: identify target behavior and acceptance criteria for one increment.
+    \item \textbf{Implementation}: deliver backend/frontend/database changes for the selected increment.
+    \item \textbf{Integration}: connect the increment with GitHub, AI pipeline, and dashboard workflows.
+    \item \textbf{Validation}: run functional tests and runtime checks on core flows.
+    \item \textbf{Feedback and adjustment}: refine requirements and begin next cycle.
+\end{enumerate}
+
+\begin{table}[htbp]
+\centering
+\caption{Iterative phases applied to the project}
+\label{tab:iterative_phases}
+\begin{tabular}{p{0.19\textwidth}p{0.75\textwidth}}
+\toprule
+\textbf{Phase} & \textbf{Concrete application in this project} \\
+\midrule
+Planning & Define increment scope such as authentication hardening, webhook review flow, or findings dashboard improvements. \\
+Build & Implement route handlers, React panels, data models, and AI orchestration logic. \\
+Integrate & Connect GitHub OAuth/App installation, webhook events, Mongo persistence, SSE updates, and posting strategy. \\
+Test & Verify route contracts, failure paths, parsing behavior, and scheduler/runtime snapshots. \\
+Refine & Adjust repository policy controls, thresholds, error messages, and monitoring visibility for the next cycle. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{2.4 Functional Requirements}
+
+\subsection{2.4.1 Requirement identification approach}
+
+Functional requirements are derived from implemented behavior across:
+\begin{itemize}
+    \item authentication and identity routes;
+    \item GitHub installation and repository configuration workflows;
+    \item webhook-triggered review orchestration;
+    \item findings persistence and retrieval endpoints;
+    \item dashboard sections and real-time event updates.
+\end{itemize}
+
+\subsection{2.4.2 Functional requirements specification}
+
+\begin{longtable}{p{0.12\textwidth}p{0.80\textwidth}}
+\caption{Functional requirements (FR)}\label{tab:functional_requirements}\\
+\toprule
+\textbf{ID} & \textbf{Requirement statement} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{ID} & \textbf{Requirement statement} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+FR-01 & The system shall allow user registration using email and password, with validation rules and duplicate-email prevention. \\
+FR-02 & The system shall allow authenticated login and shall issue a session token used to access protected APIs. \\
+FR-03 & The system shall support GitHub OAuth login and shall map GitHub identity to a local user profile. \\
+FR-04 & The system shall allow users to link and manage GitHub App installations associated with their account. \\
+FR-05 & The system shall allow users to create, read, update, and delete repository review configurations. \\
+FR-06 & The system shall retrieve available repositories accessible to a linked installation for configuration onboarding. \\
+FR-07 & The system shall receive GitHub pull request webhooks and trigger review processing for supported actions. \\
+FR-08 & The system shall verify webhook authenticity when a webhook secret is configured. \\
+FR-09 & The system shall preprocess and segment pull request diffs before AI analysis. \\
+FR-10 & The system shall invoke the AI review bridge and parse structured outputs into normalized review artifacts. \\
+FR-11 & The system shall persist detected findings in MongoDB with deduplication support for recurrent issues. \\
+FR-12 & The system shall expose findings retrieval endpoints with filters (repository, PR, category, file, date, text) and pagination. \\
+FR-13 & The system shall provide dashboard summary data (findings, installations, configurations, scheduler and AI snapshots). \\
+FR-14 & The system shall provide a real-time event stream so dashboard views can refresh when relevant backend events occur. \\
+FR-15 & The system shall allow API key lifecycle management (create/list/revoke) and optional API-key gating of review execution. \\
+FR-16 & The system shall provide an optional scheduled scan workflow to review open PRs periodically. \\
+\end{longtable}
+
+\subsection{2.4.3 Functional requirements by actor}
+
+\begin{table}[htbp]
+\centering
+\caption{Two-actor functional mapping}
+\label{tab:actor_functional_mapping}
+\begin{tabular}{p{0.25\textwidth}p{0.67\textwidth}}
+\toprule
+\textbf{Actor} & \textbf{Main expected system functions} \\
+\midrule
+User & Register/login, connect GitHub identity, configure repository policy, navigate dashboard, monitor findings, and manage API keys. \\
+GitHub Application (AI-enabled) & Send webhook events, provide installation/repository data, trigger AI-assisted review workflow, and accept review comments/publication. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{2.5 Non-Functional Requirements}
+
+\subsection{2.5.1 Non-functional requirement categories}
+
+Non-functional requirements are organized around quality attributes critical to production viability of AI-assisted review systems:
+\begin{itemize}
+    \item Security
+    \item Reliability and fault tolerance
+    \item Performance and scalability
+    \item Maintainability
+    \item Usability and operability
+\end{itemize}
+
+\subsection{2.5.2 Non-functional requirements specification}
+
+\begin{longtable}{p{0.12\textwidth}p{0.22\textwidth}p{0.58\textwidth}}
+\caption{Non-functional requirements (NFR)}\label{tab:nfr}\\
+\toprule
+\textbf{ID} & \textbf{Category} & \textbf{Requirement statement} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{ID} & \textbf{Category} & \textbf{Requirement statement} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+NFR-01 & Security & The system shall protect private APIs using authenticated sessions (JWT-based access control). \\
+NFR-02 & Security & The system shall store passwords and API keys using one-way hashing mechanisms. \\
+NFR-03 & Security & The system shall validate GitHub webhook signatures (HMAC) when secret configuration is enabled. \\
+NFR-04 & Security & The system shall sanitize user-controlled navigation targets to avoid unsafe redirects after authentication. \\
+NFR-05 & Reliability & The system shall apply fallback strategies for PR diff retrieval to tolerate external API variability. \\
+NFR-06 & Reliability & The system shall apply retry with backoff for transient AI and publication failures. \\
+NFR-07 & Reliability & The system shall expose health and startup diagnostics to support operational verification. \\
+NFR-08 & Performance & The system shall constrain AI payload size by filtering and segmenting large diffs. \\
+NFR-09 & Performance & The findings API shall support pagination to bound response size and client rendering costs. \\
+NFR-10 & Maintainability & The backend shall preserve modular separation of concerns (routes, services, models, utilities). \\
+NFR-11 & Maintainability & The project shall include unit/integration-style checks for critical helper and parsing logic. \\
+NFR-12 & Usability & The dashboard shall provide clear loading/error states and actionable diagnostics for operators. \\
+NFR-13 & Operability & The system shall support environment-driven configuration for deployment and runtime tuning. \\
+NFR-14 & Operability & The system shall support optional periodic scanning of open PRs through a scheduler mechanism. \\
+\end{longtable}
+
+\section{2.6 General Use Case Diagram}
+
+\subsection{2.6.1 PlantUML source}
+
+\begin{lstlisting}[caption={General use case diagram (PlantUML source)},label={lst:global_use_case}]
+@startuml
+left to right direction
+actor User
+actor "GitHub Application (AI-enabled)" as GitHubApp
+
+rectangle "AI-Assisted PR Review Platform" {
+  usecase "Register / Login" as UC1
+  usecase "Authenticate with GitHub OAuth" as UC2
+  usecase "Link GitHub Installation" as UC3
+  usecase "Configure Repository Policy" as UC4
+  usecase "Receive PR Webhook" as UC5
+  usecase "Run AI Review Pipeline" as UC6
+  usecase "Persist Findings" as UC7
+  usecase "View Dashboard and Findings" as UC8
+  usecase "Manage API Keys" as UC9
+  usecase "Run Scheduled PR Scan" as UC10
+}
+
+User --> UC1
+User --> UC2
+User --> UC4
+User --> UC8
+User --> UC9
+GitHubApp --> UC3
+GitHubApp --> UC5
+GitHubApp --> UC6
+UC5 --> UC6
+UC6 --> UC7
+UC10 --> UC6
+@enduml
+\end{lstlisting}
+
+\subsection{2.6.2 Diagram explanation}
+
+The global use case diagram summarizes the platform as an event-driven assistant around GitHub PR activity with exactly two external actors: the \textbf{User} and the \textbf{AI-enabled GitHub application}. The user configures policy, manages credentials, and monitors outcomes, while the GitHub application triggers review entry points and receives published review outputs. The inclusion of scheduled scanning emphasizes that review can be both reactive (webhooks) and periodic (scheduler), while persistence and dashboard capabilities guarantee post-review visibility.
+
+\section{2.7 Sequence Diagrams}
+
+\subsection{2.7.1 Authentication sequence}
+
+\begin{lstlisting}[caption={Authentication flow (PlantUML source)},label={lst:auth_sequence}]
+@startuml
+actor User
+participant "Frontend SPA" as Frontend
+participant "Auth API" as AuthApi
+database "MongoDB" as DB
+
+User -> Frontend: Submit credentials
+Frontend -> AuthApi: POST /api/auth/login
+AuthApi -> DB: find user by email
+DB --> AuthApi: user record + password hash
+AuthApi -> AuthApi: verify password and sign JWT
+AuthApi --> Frontend: token + user view
+Frontend -> Frontend: store session and route to dashboard
+Frontend --> User: authenticated dashboard access
+@enduml
+\end{lstlisting}
+
+This sequence shows the basic credential path: user input is validated server-side, password hash verification occurs against persistent user records, and a token-based session is returned to the SPA for protected route access. The flow underpins FR-01 to FR-03 and NFR-01/NFR-02.
+
+\subsection{2.7.2 Webhook-to-AI-review sequence}
+
+\begin{lstlisting}[caption={Webhook-to-AI-review flow (PlantUML source)},label={lst:webhook_sequence}]
+@startuml
+actor "GitHub Application (AI-enabled)" as GitHubApp
+participant "Webhook Endpoint" as Webhook
+participant "Review Service" as Review
+participant "Python AI Bridge" as Python
+database "MongoDB" as DB
+participant "GitHub Review API" as GhApi
+
+GitHubApp -> Webhook: POST /api/webhooks/github (pull_request event)
+Webhook -> Webhook: validate signature + action filter
+Webhook -> Review: reviewPullRequest(context)
+Review -> Review: fetch and filter PR diff
+Review -> Python: runPythonReview(prompt, segmented diff)
+Python --> Review: structured analysis
+Review -> DB: upsert findings
+Review -> GhApi: create review/comments
+Review --> Webhook: review result
+Webhook --> GitHubApp: 200 accepted
+@enduml
+\end{lstlisting}
+
+This sequence captures the core business value of the platform: transforming GitHub webhook events into persisted, visible, and optionally published review outcomes. It links FR-07 to FR-14 and major reliability/performance NFRs.
+
+\section{2.8 Class Diagram}
+
+\subsection{2.8.1 PlantUML source}
+
+\begin{lstlisting}[caption={Domain class diagram (PlantUML source)},label={lst:class_diagram}]
+@startuml
+class User {
+  +id: ObjectId
+  +email: string
+  +passwordHash: string?
+  +githubId: string?
+  +githubLogin: string?
+}
+
+class Installation {
+  +id: ObjectId
+  +userId: ObjectId
+  +installationId: string
+  +accountLogin: string
+  +accountType: string
+}
+
+class RepoConfig {
+  +id: ObjectId
+  +userId: ObjectId
+  +installationId: string
+  +repoFullName: string
+  +focusAreas: string[]
+  +enforcementLevel: string
+  +mergeMinScore: number
+}
+
+class ApiKey {
+  +id: ObjectId
+  +userId: ObjectId
+  +name: string
+  +prefix: string
+  +keyHash: string
+  +revokedAt: Date?
+}
+
+class PrReviewFinding {
+  +id: ObjectId
+  +userId: ObjectId?
+  +repoFullName: string
+  +prNumber: number
+  +category: string
+  +filePath: string
+  +description: string
+  +dedupeKey: string?
+}
+
+class ReviewPullRequestService
+class PythonReviewBridge
+class GithubPostingStrategy
+
+User "1" -- "0..*" Installation
+User "1" -- "0..*" RepoConfig
+User "1" -- "0..*" ApiKey
+User "1" -- "0..*" PrReviewFinding
+Installation "1" -- "0..*" RepoConfig
+RepoConfig "1" ..> ReviewPullRequestService : governs policy
+ReviewPullRequestService ..> PythonReviewBridge : invokes AI analysis
+ReviewPullRequestService ..> GithubPostingStrategy : publishes results
+ReviewPullRequestService ..> PrReviewFinding : persists findings
+@enduml
+\end{lstlisting}
+
+\subsection{2.8.2 Diagram explanation}
+
+The class diagram combines persistent entities (MongoDB models) and core service abstractions. The dominant relationship is tenant ownership via \texttt{userId}, ensuring each operator’s installations, repository configurations, keys, and findings remain logically scoped. The \texttt{ReviewPullRequestService} orchestrates business logic by consuming configuration policy, invoking the AI bridge, persisting findings, and applying publication strategy.
+
+\section{2.9 End-to-End Review Pipeline}
+
+\subsection{2.9.1 PlantUML source}
+
+\begin{lstlisting}[caption={End-to-end review pipeline (PlantUML source)},label={lst:pipeline_diagram}]
+@startuml
+start
+:PR opened/synchronized on GitHub;
+:Webhook received by backend;
+if (Signature valid?) then (yes)
+  :Resolve installation and user context;
+  :Load or create RepoConfig;
+  :Fetch PR diff with fallback strategy;
+  :Filter and segment unified diff;
+  :Invoke Python AI bridge;
+  if (AI response parsed?) then (yes)
+    :Upsert findings in MongoDB;
+    :Apply posting strategy;
+    :Publish SSE event to dashboard;
+    :Return success;
+  else (no)
+    :Record parsing/analysis failure;
+    :Return controlled error state;
+  endif
+else (no)
+  :Reject webhook request;
+endif
+stop
+@enduml
+\end{lstlisting}
+
+\subsection{2.9.2 Pipeline explanation}
+
+The pipeline formalizes the processing contract from trigger to visibility. It highlights explicit control points that enforce correctness and resilience: signature validation, installation/user scoping, fallback retrieval, bounded AI invocation, structured parsing, persistence, publication, and operator notification. This diagram synthesizes both FR behavior and NFR quality constraints in one operational flow.
+
+\section{2.10 Conclusion}
+
+This chapter transformed implementation details into a coherent requirements specification for the AI-assisted PR review platform. The \textbf{AI foundation} section established the role and limits of model-based analysis, while the \textbf{iterative methodology} justified the project’s incremental delivery strategy under integration uncertainty.
+
+The resulting \textbf{functional requirements} describe what the platform must provide across authentication, GitHub integration, review orchestration, persistence, and observability. The \textbf{non-functional requirements} define the quality envelope required for secure, reliable, maintainable, and operationally useful deployment.
+
+Finally, the use case, sequence, class, and pipeline diagrams provided complementary views of system behavior and structure. Together, these artifacts form the baseline specification used to guide architecture validation and implementation assessment in subsequent chapters. Technical terms introduced in this chapter are defined in the \textbf{Glossary}.

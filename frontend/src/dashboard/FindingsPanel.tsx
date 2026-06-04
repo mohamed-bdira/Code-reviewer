@@ -297,7 +297,7 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                                             <div className="font-mono text-xs text-fg">{row.repoFullName}</div>
                                             <div className="text-muted">#{row.prNumber}</div>
                                         </td>
-                                        <td className="max-w-[160px] px-3 py-2 align-top font-mono text-xs text-accent">
+                                        <td className="max-w-[200px] break-all px-3 py-2 align-top font-mono text-xs text-accent">
                                             {row.filePath}
                                         </td>
                                         <td className="whitespace-nowrap px-3 py-2 align-top font-mono text-xs text-muted">

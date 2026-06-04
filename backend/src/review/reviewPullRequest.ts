@@ -22,6 +22,7 @@ import {
     buildMinimalGithubRateLimitStub,
     shouldUsePreemptiveSlimGithubPost,
 } from './githubPostingStrategy.js';
+import { runAstGrepOnPrFiles } from './astGrep.js';
 import { delayMs, runPythonReview } from './pythonReview.js';
 
 /** Workspace-root NDJSON log (debug session); path from …/backend/src/review → repo root `pfe/`. */
@@ -403,6 +404,33 @@ export async function reviewPullRequest(args: ReviewPullRequestArgs): Promise<Re
     const scoreDimensions = buildScoreDimensions(effectiveConfig.focusAreas);
     const dimensionsList = scoreDimensions.join(', ');
 
+    const pathsForAstGrep =
+        filterResult?.keptPaths.length
+            ? filterResult.keptPaths
+            : prFilePaths !== null
+              ? [...prFilePaths]
+              : [];
+
+    let astGrepBugs: ReviewBugInput[] = [];
+    let astGrepPromptLine = 'Deterministic ast-grep scan: disabled for this repository.';
+    if (effectiveConfig.useAstGrep) {
+        if (!headSha) {
+            astGrepPromptLine = 'Deterministic ast-grep scan: skipped (PR head SHA unavailable).';
+        } else if (pathsForAstGrep.length === 0) {
+            astGrepPromptLine = 'Deterministic ast-grep scan: skipped (no PR file paths).';
+        } else {
+            const astOut = await runAstGrepOnPrFiles({
+                octokit,
+                repoOwner,
+                repoName,
+                headSha,
+                repoRelativePaths: pathsForAstGrep,
+            });
+            astGrepPromptLine = astOut.promptBlock || astOut.skipReason || 'Deterministic ast-grep scan: no output.';
+            astGrepBugs = astOut.bugs;
+        }
+    }
+
     const sharedHeader = `You are a senior software engineer reviewing a pull request.
 Repository: ${repoFullName}
 PR title: ${prTitle}
@@ -411,7 +439,7 @@ Enforcement level: ${effectiveConfig.enforcementLevel}
 Focus areas: ${effectiveConfig.focusAreas.join(', ')}
 Score sections (for final segment only; keys must be lowercase): ${dimensionsList}
 Merge minimum (minimum of section scores must be >= this for a green merge signal): ${effectiveConfig.mergeMinScore}
-Use ast-grep signal: ${effectiveConfig.useAstGrep ? 'yes' : 'no'}
+${astGrepPromptLine}
 Additional repository rules: ${effectiveConfig.customRules}`;
 
     let segments =
@@ -620,7 +648,7 @@ END_DIFF`;
 
     /** Bugs are persisted whenever the model lists them in JSON, even if scores failed validation. */
     const bugsFromAi = dedupeBugs(
-        [...(parsed.data?.bugs ?? []), ...parsed.orphanParsedBugs],
+        [...(parsed.data?.bugs ?? []), ...parsed.orphanParsedBugs, ...astGrepBugs],
         repoFullName,
         prNumber,
     );

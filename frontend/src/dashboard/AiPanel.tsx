@@ -20,6 +20,22 @@ export default function AiPanel({ summary }: { summary: DashboardSummary | null 
                 </ul>
             </section>
 
+            <section className="rounded-lg border border-violet-900/40 bg-violet-950/20 p-4">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-200/90">
+                    ast-grep (when enabled per repo)
+                </h3>
+                <p className="text-sm text-violet-100/85">
+                    Fetches changed files at the PR head commit from GitHub, runs bundled rules under{' '}
+                    <code className="rounded bg-black/30 px-1">backend/ast-grep/</code>, injects matches into the AI
+                    prompt, and persists them as findings alongside LLM bugs.
+                </p>
+                <ul className="mt-3 list-inside list-disc text-xs text-violet-200/70">
+                    <li>Rules: no-eval (TypeScript), no-dangerously-set-inner-html (TSX)</li>
+                    <li>Requires GitHub Contents API read + PR head SHA</li>
+                    <li>Toggle on Configurations → repository → “Run ast-grep…”</li>
+                </ul>
+            </section>
+
             <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
                 <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Runtime</h3>
                 {ai ? (

@@ -1,0 +1,3 @@
+# Bundled ast-grep project for PR review (see backend/src/review/astGrep.ts)
+ruleDirs:
+  - ./rules

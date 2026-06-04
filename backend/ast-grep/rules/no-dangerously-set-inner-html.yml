@@ -1,0 +1,6 @@
+id: no-dangerously-set-inner-html
+language: Tsx
+severity: warning
+message: dangerouslySetInnerHTML can introduce XSS; sanitize or avoid.
+rule:
+  pattern: dangerouslySetInnerHTML={$$$PROPS}

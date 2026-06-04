@@ -1,0 +1,96 @@
+% Sprint 2 frontend — include from main report, e.g. \input{Chapter4_Sprint2_Frontend_EN.tex}
+% Requires: graphicx or similar only if you add figures; amsmath not required.
+
+\section{Sprint 2: Frontend development and cloud deployment}
+\label{sec:sprint2-frontend}
+
+\subsection{Dashboard composition and routing}
+\label{subsec:dashboard-routing}
+
+Sprint~2 delivered the operator-facing \textbf{React single-page application} (SPA) under \texttt{frontend/src}. The shell is \textbf{\texttt{DashboardApp}}, which combines a persistent \textbf{sidebar}, a \textbf{section header}, and \textbf{panel} content switched by URL. Public authentication pages (\texttt{LoginPage}, \texttt{RegisterPage}, \texttt{AuthFinishPage}) sit outside the dashboard.
+
+\begin{verbatim}
+AuthProvider
+└── BrowserRouter
+    ├── /login, /register, /auth/finish  →  auth pages
+    └── RequireAuth
+        └── DashboardUnlockGate
+            └── DashboardApp
+                ├── OverviewPanel          (/)
+                ├── GithubPanel            (/github)
+                ├── ConfigurationsPanel    (/configurations)
+                ├── SchedulePanel          (/schedule)
+                ├── FindingsPanel          (/findings)
+                └── KeysPanel              (/keys)
+\end{verbatim}
+
+\begin{table}[htbp]
+\centering
+\caption{Dashboard sections and source files (as implemented)}
+\label{tab:dashboard-sections}
+\begin{tabular}{p{0.22\textwidth}p{0.12\textwidth}p{0.28\textwidth}p{0.30\textwidth}}
+\toprule
+\textbf{Section} & \textbf{Route} & \textbf{Panel} & \textbf{Responsibility} \\
+\midrule
+Overview & \texttt{/} & \texttt{OverviewPanel} & Aggregated summary via \texttt{GET /api/dashboard/summary} \\
+GitHub \& CI & \texttt{/github} & \texttt{GithubPanel} & Installations and webhook metadata \\
+Configurations & \texttt{/configurations} & \texttt{ConfigurationsPanel} & \texttt{RepoConfig} CRUD per repository \\
+Scheduled scan & \texttt{/schedule} & \texttt{SchedulePanel} & Bug-scan scheduler settings \\
+Bug findings & \texttt{/findings} & \texttt{FindingsPanel} & Filterable, paginated findings \\
+API keys & \texttt{/keys} & \texttt{KeysPanel} & Key lifecycle and dashboard unlock \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Routing is declared in \texttt{frontend/src/App.tsx}. Each dashboard path renders \texttt{RequireAuth} $\rightarrow$ \texttt{DashboardUnlockGate} $\rightarrow$ \texttt{DashboardApp}.
+
+\paragraph{Authentication gates.}
+\textbf{\texttt{RequireAuth}} blocks nested routes when no authenticated \textbf{user} is available. While \texttt{AuthContext} validates a stored JWT (\texttt{initializing}), a loading screen is shown; otherwise React Router redirects to \texttt{/login?next=...} using \texttt{sanitizePostLoginPath}.
+
+\textbf{\texttt{DashboardUnlockGate}} requires a \textbf{service API key} (\texttt{pfe.serviceKey} in \texttt{localStorage}) for most sections after sign-in. The \texttt{/keys} route remains accessible so the operator can create a key and unlock the dashboard.
+
+On HTTP~401, \texttt{apiFetch} calls \texttt{setOnUnauthorized}, which triggers \texttt{logout()} in \texttt{AuthContext}. \texttt{RequireAuth} then redirects unauthenticated users to \texttt{/login}.
+
+\subsection{Presentation layer and shared patterns}
+\label{subsec:presentation}
+
+Styling uses \textbf{Tailwind CSS~v4} utilities and tokens in \texttt{frontend/src/index.css} (\texttt{bg-bg}, \texttt{bg-elevated}, \texttt{text-muted}, \texttt{border-line}, etc.), avoiding separate global stylesheets.
+
+The repository does \textbf{not} ship standalone components named \texttt{PrimaryButton}, \texttt{StatusBadge}, \texttt{DataTable}, or \texttt{ModalOverlay}. Panels reuse Tailwind patterns inline:
+\begin{itemize}
+    \item \textbf{Buttons:} accent primary and bordered secondary styles with \texttt{disabled:} opacity.
+    \item \textbf{Tables:} \texttt{FindingsPanel} uses a semantic \texttt{<table>} with theme-based row hover, not fixed alternating hex row colors.
+    \item \textbf{Modals:} \texttt{AddRepoModal} in \texttt{ConfigurationsPanel}; some flows use \texttt{window.confirm}.
+    \item \textbf{Live updates:} \texttt{useEventStream} subscribes to \texttt{GET /api/events} (SSE). Event types include \texttt{finding-created}, \texttt{finding-updated}, \texttt{repo-config-updated}, and \texttt{installation-linked}.
+\end{itemize}
+
+\texttt{formatIso} in \texttt{formatters.ts} formats ISO timestamps (\texttt{firstSeenAt}, \texttt{lastSeenAt}) with \texttt{Date\#toLocaleString()}; the SPA does not use \texttt{Intl.RelativeTimeFormat}. Finding descriptions are plain text in the UI; \textbf{Markdown} for GitHub reviews is produced on the \textbf{backend} (\texttt{reviewPullRequest.ts}), not rendered in the SPA.
+
+\subsection{Centralized API access}
+\label{subsec:apifetch}
+
+SPA-to-backend traffic is centralized in \textbf{\texttt{frontend/src/auth/apiFetch.ts}} using the browser \textbf{\texttt{fetch} API} (not Axios). Wrappers under \texttt{frontend/src/api/} keep panels free of low-level HTTP code.
+
+\begin{table}[htbp]
+\centering
+\caption{Responsibilities of the \texttt{apiFetch} layer}
+\label{tab:apifetch}
+\begin{tabular}{p{0.24\textwidth}p{0.68\textwidth}}
+\toprule
+\textbf{Capability} & \textbf{Implementation} \\
+\midrule
+Base URL & \texttt{VITE\_API\_BASE\_URL}; dev uses Vite proxy when unset \\
+Authentication & \texttt{Authorization: Bearer ...}; \texttt{/api/keys} uses session JWT only; other routes prefer service API key, else JWT \\
+Errors & JSON \texttt{\{ error \}} when present; actionable messages for network/CORS failures \\
+Session expiry & HTTP~401 invokes \texttt{onUnauthorized} $\rightarrow$ \texttt{logout()} \\
+Content & JSON request/response with standard headers \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Service-key preference for most paths (after unlock) is implemented in \texttt{pickBearerToken} inside \texttt{apiFetch.ts}. This yields a single configuration point for production (e.g.\ Vercel $\rightarrow$ Railway) and keeps view code focused on operator tasks.
+
+\subsection{Relation to the backend}
+\label{subsec:frontend-backend}
+
+The SPA targets the \textbf{Express~5} API. Sprint~2 deployment sets \texttt{VITE\_API\_BASE\_URL} on the frontend build; the backend validates JWTs and API keys in middleware. Route-level React gates (\S\ref{subsec:dashboard-routing}) and \texttt{apiFetch} (\S\ref{subsec:apifetch}) together enforce authenticated access end to end.

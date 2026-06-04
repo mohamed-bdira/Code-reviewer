@@ -1,0 +1,8 @@
+id: no-eval
+language: TypeScript
+severity: error
+message: Avoid eval(); it enables arbitrary code execution.
+rule:
+  any:
+    - pattern: eval($$$ARGS)
+    - pattern: window.eval($$$ARGS)

@@ -1,0 +1,202 @@
+% MongoDB collections and REST API routes (GitHub sign-in only)
+% Requires in preamble: \usepackage{booktabs}, \usepackage{longtable}, \usepackage{array}
+% Optional: \usepackage[hyphens]{url} or \usepackage{xurl} for long paths
+
+\section{MongoDB collections}
+\label{sec:mongodb-collections}
+
+The platform persists five document collections in MongoDB (Mongoose models under \texttt{backend/models/}). Relationships use stored \texttt{ObjectId} references and denormalized strings; uniqueness is enforced with indexes, not SQL foreign keys.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Collection purposes (logical data model).}
+  \label{tab:collection-purposes}
+  \begin{tabular}{@{}p{0.22\textwidth}p{0.72\textwidth}@{}}
+    \toprule
+    \textbf{Collection} & \textbf{Purpose} \\
+    \midrule
+    \texttt{users} &
+    Operator accounts created or updated on GitHub OAuth sign-in (\texttt{githubId}, \texttt{githubLogin}, email). JWT session identifies the operator. \\
+    \texttt{installations} &
+    GitHub App installation bindings: links a platform user to a GitHub \texttt{installationId}, account login, and account type (User or Organization). \\
+    \texttt{repoconfigs} &
+    Per-repository review policy: focus areas, enforcement level, custom rules, merge minimum score, optional AST-grep flag, and associated installation id. Unique per \texttt{(userId, repoFullName)}. \\
+    \texttt{apikeys} &
+    Operator-issued API credentials: label, lookup prefix, bcrypt hash of the secret (plaintext shown once at creation). Revocation via \texttt{revokedAt}. \\
+    \texttt{prreviewfindings} &
+    AI-detected issues from pull request reviews: repository, PR number, category, file path, line range, description, first/last seen. Upserted by \texttt{dedupeKey}. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Authentication routes (GitHub only)}
+\label{sec:auth-routes-github}
+
+Email/password registration and login are out of scope for the documented product flow; operators authenticate exclusively via GitHub OAuth.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Authentication API routes and \texttt{users} collection access.}
+  \label{tab:auth-routes}
+  \begin{tabular}{@{}lllp{0.38\textwidth}@{}}
+    \toprule
+    \textbf{Method} & \textbf{Path} & \textbf{Collection} & \textbf{Action} \\
+    \midrule
+    GET  & \texttt{/api/auth/github/start}    & ---     & Redirect browser to GitHub OAuth authorize URL. \\
+    GET  & \texttt{/api/auth/github/callback} & \texttt{users} & Exchange code; upsert user; redirect to SPA \texttt{/auth/finish} with JWT. \\
+    GET  & \texttt{/api/auth/me}              & \texttt{users} & Return current user profile (\texttt{requireAuth}: JWT or API key). \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Collection-specific API routes}
+\label{sec:collection-routes}
+
+\subsection{\texttt{users}}
+Indirect access: every \texttt{requireAuth} request resolves the operator from JWT (post-GitHub sign-in) or from \texttt{apikeys} verification.
+
+\subsection{\texttt{installations}}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Routes that read or write \texttt{installations}.}
+  \label{tab:routes-installations}
+  \begin{tabular}{@{}lllp{0.36\textwidth}@{}}
+    \toprule
+    \textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Action} \\
+    \midrule
+    GET    & \texttt{/api/installations}           & \texttt{requireAuth}   & List installations for current user. \\
+    POST   & \texttt{/api/installations}           & \texttt{requireAuth}   & Link installation by numeric \texttt{installationId}. \\
+    DELETE & \texttt{/api/installations/:id}       & \texttt{requireAuth}   & Delete installation document. \\
+    GET    & \texttt{/api/github/install}          & \texttt{requireAuth}   & HTTP redirect to GitHub App install page. \\
+    POST   & \texttt{/api/github/install-link}     & \texttt{requireAuth}   & JSON response with install URL (state JWT). \\
+    GET    & \texttt{/api/github/setup}            & State JWT (callback)   & Upsert installation after GitHub redirect. \\
+    GET    & \texttt{/api/dashboard/summary}       & \texttt{requireAuth}   & Include installations in dashboard snapshot. \\
+    POST   & \texttt{/api/webhooks/github}         & Webhook signature      & Resolve tenant by \texttt{installation.id}. \\
+    GET    & \texttt{/api/repo-configs/available}  & \texttt{requireAuth}   & Validate installation ownership; list repos via GitHub API. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{\texttt{repoconfigs}}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Routes that read or write \texttt{repoconfigs}.}
+  \label{tab:routes-repoconfigs}
+  \begin{tabular}{@{}lllp{0.36\textwidth}@{}}
+    \toprule
+    \textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Action} \\
+    \midrule
+    GET    & \texttt{/api/repo-configs}              & \texttt{requireAuth} & List repository configurations for current user. \\
+    GET    & \texttt{/api/repo-configs/available}    & \texttt{requireAuth} & List repositories accessible to an installation (GitHub API). \\
+    POST   & \texttt{/api/repo-configs}              & \texttt{requireAuth} & Create configuration (\texttt{userId}, \texttt{repoFullName} unique). \\
+    PATCH  & \texttt{/api/repo-configs/:id}          & \texttt{requireAuth} & Update whitelisted policy fields. \\
+    DELETE & \texttt{/api/repo-configs/:id}          & \texttt{requireAuth} & Delete configuration; emit SSE event. \\
+    GET    & \texttt{/api/dashboard/summary}         & \texttt{requireAuth} & Include repo configs and count in snapshot. \\
+    POST   & \texttt{/api/webhooks/github}           & Webhook signature  & Load or upsert \texttt{RepoConfig} for reviewed repository. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{\texttt{apikeys}}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Routes that read or write \texttt{apikeys}. Session JWT required for management (\texttt{requireSession}).}
+  \label{tab:routes-apikeys}
+  \begin{tabular}{@{}lllp{0.36\textwidth}@{}}
+    \toprule
+    \textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Action} \\
+    \midrule
+    GET    & \texttt{/api/keys}       & \texttt{requireSession} & List API keys (metadata only; no secret). \\
+    POST   & \texttt{/api/keys}       & \texttt{requireSession} & Create key; return plaintext once; store bcrypt hash. \\
+    DELETE & \texttt{/api/keys/:id}   & \texttt{requireSession} & Soft-revoke key (\texttt{revokedAt}). \\
+    \multicolumn{4}{@{}p{0.95\textwidth}@{}}{\textit{Indirect:} \texttt{Bearer} API key on any \texttt{requireAuth} route triggers \texttt{verifyKey} against \texttt{apikeys}.} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{\texttt{prreviewfindings}}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Routes that read or write \texttt{prreviewfindings}. HTTP API is read-only; writes occur in the review pipeline.}
+  \label{tab:routes-findings}
+  \begin{tabular}{@{}lllp{0.36\textwidth}@{}}
+    \toprule
+    \textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Action} \\
+    \midrule
+    GET & \texttt{/api/findings}             & \texttt{requireAuth} & List findings with filters and paging (\texttt{matchFindingsVisibleToUser}). \\
+    GET & \texttt{/api/findings/by-category} & \texttt{requireAuth} & Aggregate category counts (same filter scope). \\
+    GET & \texttt{/api/dashboard/summary}    & \texttt{requireAuth} & Total stored findings and top categories. \\
+    POST & \texttt{/api/webhooks/github}     & Webhook signature  & \texttt{reviewPullRequest} $\rightarrow$ \texttt{upsertPrReviewFinding} (not a public CRUD endpoint). \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Cross-collection and infrastructure routes}
+\label{sec:cross-routes}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Routes touching multiple collections or no MongoDB collection.}
+  \label{tab:routes-cross}
+  \begin{tabular}{@{}llp{0.55\textwidth}@{}}
+    \toprule
+    \textbf{Method} & \textbf{Path} & \textbf{Collections / notes} \\
+    \midrule
+    GET  & \texttt{/api/dashboard/summary} &
+    \texttt{repoconfigs}, \texttt{installations}, \texttt{prreviewfindings} (aggregated read). \\
+    POST & \texttt{/api/webhooks/github} &
+    \texttt{installations}, \texttt{repoconfigs}, \texttt{prreviewfindings}; optional \texttt{apikeys} gate if \texttt{REQUIRE\_API\_KEY\_FOR\_REVIEWS=true}. \\
+    GET  & \texttt{/api/events} &
+    No direct DB access; Server-Sent Events (\texttt{?token=} JWT or API key). Pushes \texttt{finding-created}, \texttt{finding-updated}, \texttt{installation-linked}, \texttt{repo-config-updated}. \\
+    GET  & \texttt{/} & Service health JSON; no collection. \\
+    GET  & \texttt{/health} & Health check; no collection. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Complete route index}
+\label{sec:route-index}
+
+\begin{longtable}{@{}lllp{0.34\textwidth}@{}}
+  \caption{Complete REST API route index (GitHub sign-in product flow).}
+  \label{tab:route-index} \\
+  \toprule
+  \textbf{Method} & \textbf{Path} & \textbf{Primary collection(s)} & \textbf{Summary} \\
+  \midrule
+  \endfirsthead
+  \multicolumn{4}{c}{\tablename\ \thetable\ -- \textit{continued}} \\
+  \toprule
+  \textbf{Method} & \textbf{Path} & \textbf{Primary collection(s)} & \textbf{Summary} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+  GET  & \texttt{/}                               & --- & API service root / health snapshot. \\
+  GET  & \texttt{/health}                         & --- & Health check. \\
+  POST & \texttt{/api/webhooks/github}             & \texttt{installations}, \texttt{repoconfigs}, \texttt{prreviewfindings} & GitHub \texttt{pull\_request} webhook; runs AI review. \\
+  GET  & \texttt{/api/auth/github/start}           & --- & Start GitHub OAuth. \\
+  GET  & \texttt{/api/auth/github/callback}        & \texttt{users} & Complete OAuth; issue JWT. \\
+  GET  & \texttt{/api/auth/me}                     & \texttt{users} & Current user profile. \\
+  GET  & \texttt{/api/installations}               & \texttt{installations} & List installations. \\
+  POST & \texttt{/api/installations}               & \texttt{installations} & Link installation. \\
+  DELETE & \texttt{/api/installations/:id}         & \texttt{installations} & Unlink installation. \\
+  GET  & \texttt{/api/github/install}              & \texttt{installations} & Redirect to App install UI. \\
+  POST & \texttt{/api/github/install-link}         & \texttt{installations} & Install URL for SPA. \\
+  GET  & \texttt{/api/github/setup}                & \texttt{installations} & Post-install callback upsert. \\
+  GET  & \texttt{/api/keys}                        & \texttt{apikeys} & List API keys. \\
+  POST & \texttt{/api/keys}                        & \texttt{apikeys} & Generate API key. \\
+  DELETE & \texttt{/api/keys/:id}                  & \texttt{apikeys} & Revoke API key. \\
+  GET  & \texttt{/api/repo-configs}                & \texttt{repoconfigs} & List repo configs. \\
+  GET  & \texttt{/api/repo-configs/available}      & \texttt{installations} & List repos from GitHub. \\
+  POST & \texttt{/api/repo-configs}                & \texttt{repoconfigs} & Create repo config. \\
+  PATCH & \texttt{/api/repo-configs/:id}           & \texttt{repoconfigs} & Update repo config. \\
+  DELETE & \texttt{/api/repo-configs/:id}          & \texttt{repoconfigs} & Delete repo config. \\
+  GET  & \texttt{/api/findings}                    & \texttt{prreviewfindings} & List findings. \\
+  GET  & \texttt{/api/findings/by-category}        & \texttt{prreviewfindings} & Category rollups. \\
+  GET  & \texttt{/api/dashboard/summary}           & Multiple & Dashboard snapshot. \\
+  GET  & \texttt{/api/events}                      & --- & SSE live updates. \\
+\end{longtable}

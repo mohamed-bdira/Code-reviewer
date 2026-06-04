@@ -530,7 +530,7 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
                             checked={draft.useAstGrep}
                             onChange={(e) => setDraft((d) => ({ ...d, useAstGrep: e.target.checked }))}
                         />
-                        Hint the model to use ast-grep style patterns
+                        Run ast-grep on PR head files and merge matches into findings
                     </label>
                 </div>
 

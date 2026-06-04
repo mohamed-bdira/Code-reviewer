@@ -1,0 +1,99 @@
+@startuml app-complete-sequence
+' End-to-end flow: GitHub sign-in → AI PR review → bug findings in dashboard
+' Verified against backend/src and frontend/src (Code-reviewer).
+
+autonumber
+
+actor "Operator" as Op
+participant "React SPA" as SPA
+participant "Express API" as API
+database "MongoDB" as DB
+participant "GitHub" as GH
+participant "scripts/pythonExploit.py" as PY
+
+== Sign in with GitHub ==
+
+Op -> SPA : Click Sign in with GitHub
+SPA -> API : Browser navigates to\nGET /api/auth/github/start
+API -> GH : Redirect to OAuth authorize
+Op -> GH : Approve access
+GH -> API : GET /api/auth/github/callback?code=
+API -> GH : POST oauth/access_token\nthen GET api.github.com/user
+API -> DB : Upsert User\n(githubId, email, githubLogin)
+API -> SPA : Redirect /auth/finish?token=&next=
+SPA -> SPA : Store JWT in localStorage
+SPA -> API : GET /api/auth/me\nBearer JWT
+API --> SPA : user profile
+
+== Enable automation (order may vary) ==
+
+Op -> SPA : POST /api/keys {name}\non API keys page (session JWT only)
+SPA -> API : POST /api/keys\nBearer JWT
+API -> DB : Store ApiKey\n(bcrypt hash, prefix)
+API --> SPA : Plaintext key once\n(64 hex chars)
+
+Op -> SPA : Paste key on unlock gate
+SPA -> API : GET /api/auth/me\nBearer JWT
+SPA -> API : GET /api/auth/me\nBearer API key
+API -> DB : verifyKey on second call
+SPA -> SPA : Store service key\nin localStorage
+
+Op -> SPA : Install GitHub App\non Configurations
+SPA -> API : POST /api/github/install-link\nBearer JWT
+API --> SPA : GitHub App install URL\n(with state JWT)
+SPA -> GH : Browser redirect to install URL
+Op -> GH : Select org/user and repositories
+GH -> API : Browser GET /api/github/setup\n?installation_id=&state=
+API -> DB : Upsert Installation for userId
+API -> SPA : Redirect /configurations?installed=1
+
+note over GH, API
+  GitHub App webhook must target
+  POST /api/webhooks/github
+end note
+
+== AI review on pull request ==
+
+Op -> GH : Open or update pull request\n(any author)
+GH -> API : POST /api/webhooks/github\npull_request opened | synchronize
+API -> API : Verify x-hub-signature-256\n(if GITHUB_WEBHOOK_SECRET set)
+API --> GH : 200 Webhook received
+API -> DB : Load Installation by installation.id
+
+opt REQUIRE_API_KEY_FOR_REVIEWS=true
+  API -> DB : userHasActiveApiKey\nelse skip review
+end
+
+API -> DB : Load or upsert RepoConfig\nfor user and repo
+API -> GH : Fetch PR diff and changed paths\n(installation Octokit)
+
+loop When diff exceeds segment size
+  API -> PY : spawn stdin JSON\n{prompt, diff}
+  PY -> PY : HTTPS Gemini stream endpoint
+  PY --> API : Review text\n(parseEnforcerResponse bugs JSON)
+end
+
+API -> DB : Upsert PrReviewFinding\n(userId, dedupeKey)
+API -> API : publish finding-created\nor finding-updated
+API -> GH : Post PR review\n(postComment: true, may slim via env)
+
+== Display bugs in dashboard ==
+
+Op -> SPA : Open Bug findings\n(requires unlock gate API key)
+SPA -> API : GET /api/findings\nBearer API key or JWT
+API -> DB : Query PrReviewFinding\nmatchFindingsVisibleToUser
+API --> SPA : {items, total, skip, limit}
+
+SPA -> API : GET /api/findings/by-category\n(same auth)
+API -> DB : Aggregate counts by category
+API --> SPA : {counts}
+
+SPA -> Op : Render table, filters,\ncategory sidebar
+
+opt Dashboard open with SSE connected
+  SPA -> API : EventSource GET /api/events?token=
+  API --> SPA : finding-created\nor finding-updated
+  SPA -> SPA : Reload findings\nand by-category
+end
+
+@enduml

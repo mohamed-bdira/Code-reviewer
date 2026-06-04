@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getGithubAppKeyStatus } from './githubAppKey.js';
 import { describeMissingMongoEnv, resolveMongoUri } from './mongoUri.js';
+import { getAstGrepStatus } from '../review/astGrep.js';
 
 export type PythonBridgeStatus = {
     bin: string;
@@ -111,6 +112,18 @@ export function collectStartupChecks(
         detail: py.scriptFound
             ? `${py.bin} → ${py.scriptPath}`
             : `Script not found at ${py.scriptPath}`,
+    });
+
+    const sg = getAstGrepStatus(env);
+    checks.push({
+        ok: sg.binFound && Boolean(sg.configDir),
+        label: 'ast-grep (optional)',
+        detail:
+            sg.binFound && sg.configDir
+                ? `${sg.bin} + ${sg.configDir}`
+                : !sg.binFound
+                  ? `Binary not found at ${sg.bin} (npm install @ast-grep/cli in backend)`
+                  : 'Rules project missing (backend/ast-grep/sgconfig.yml)',
     });
 
     return checks;

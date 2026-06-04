@@ -175,6 +175,7 @@ export function registerDashboardRoutes(app: Express): void {
                     'pythonExploit.py posts to the Gemini web endpoint using only minimal static HTTP headers — no Cookie, Authorization Bearer, or custom API token headers.',
                 pipelineSteps: [
                     'Webhook lookup -> Installation -> userId -> RepoConfig (auto-create defaults)',
+                    'When useAstGrep: fetch PR head files -> ast-grep scan (bundled rules) -> prompt + persisted findings',
                     'reviewPullRequest fetches PR diff via fetchPrDiffString (multiple GitHub REST fallbacks)',
                     'Senior-engineer prompt: scores, notes, blockers, concrete bugs[] with line anchors in the diff',
                     'pythonExploit streams JSON { prompt, diff } to Gemini and returns review text',

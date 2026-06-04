@@ -69,30 +69,24 @@ export default function DashboardUnlockGate({ children }: Props) {
     };
 
     return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 px-4 text-slate-200">
-            <div className="w-full max-w-md rounded-lg border border-slate-800 bg-slate-900/70 p-6 shadow-xl">
-                <h1 className="text-lg font-semibold text-white">Unlock dashboard</h1>
-                <p className="mt-2 text-sm text-slate-400">
-                    Findings, summary, and configuration use your <strong className="text-slate-300">API key</strong> (not only
-                    your login). Generate one under <em>API keys</em>, then paste the full secret here. Key management still uses your session.
+        <div className="flex min-h-screen flex-col items-center justify-center bg-bg px-4 text-fg">
+            <div className="w-full max-w-md rounded-xl border border-line bg-surface p-6 shadow-xl">
+                <h1 className="text-lg font-semibold text-fg">Unlock dashboard</h1>
+                <p className="mt-2 text-sm text-muted">
+                    Findings and configuration are protected by your <strong className="text-fg">API key</strong>.
+                    Generate one under <em>API keys</em>, then paste it here to unlock the dashboard.
                 </p>
-                <ul className="mt-3 list-inside list-disc space-y-1 text-xs text-slate-500">
+                <ul className="mt-3 list-inside list-disc space-y-1 text-xs text-muted">
                     <li>
-                        <strong className="text-slate-400">Overview</strong> (stored counts) and <strong className="text-slate-400">Bug findings</strong> call the API with this key — they stay empty until you unlock.
+                        <strong className="text-fg">Overview</strong> and <strong className="text-fg">Bug findings</strong>{' '}
+                        stay empty until you unlock.
                     </li>
                     <li>
-                        Only the <strong className="text-slate-400">API keys</strong> page works without it (session only).
-                    </li>
-                    <li>
-                        After unlocking, use DevTools <strong className="text-slate-400">Network</strong>: <code className="text-slate-400">GET /api/findings</code> should return <strong className="text-slate-400">200</strong> with <code className="text-slate-400">items</code> / <code className="text-slate-400">total</code>.
+                        Only the <strong className="text-fg">API keys</strong> page is available before unlocking.
                     </li>
                 </ul>
-                <p className="mt-2 text-xs text-slate-500">
-                    GitHub webhooks cannot read this paste; optionally the server can delay reviews until you have created a
-                    key—see <code className="text-slate-400">REQUIRE_API_KEY_FOR_REVIEWS</code> in backend env.
-                </p>
                 <form onSubmit={onSubmit} className="mt-5 space-y-3">
-                    <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                         API key
                         <input
                             type="password"
@@ -100,22 +94,22 @@ export default function DashboardUnlockGate({ children }: Props) {
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             placeholder="Paste your API key"
-                            className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-white"
+                            className="mt-1 w-full rounded-md border border-line bg-elevated px-3 py-2 font-mono text-sm text-fg focus:border-accent focus:outline-none"
                         />
                     </label>
-                    {error && <p className="text-sm text-rose-400">{error}</p>}
+                    {error && <p className="text-sm text-rose-500 dark:text-rose-400">{error}</p>}
                     <div className="flex flex-wrap gap-2">
                         <button
                             type="submit"
                             disabled={busy || !input.trim()}
-                            className="rounded bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+                            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong disabled:opacity-50"
                         >
                             {busy ? 'Verifying…' : 'Unlock'}
                         </button>
                         <button
                             type="button"
                             onClick={() => navigate('/keys')}
-                            className="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+                            className="rounded-md border border-line px-4 py-2 text-sm text-fg transition-colors hover:bg-elevated"
                         >
                             Go to API keys
                         </button>

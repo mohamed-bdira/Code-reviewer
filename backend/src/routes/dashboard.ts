@@ -6,7 +6,6 @@ import RepoConfig from '../../models/RepoConfig.js';
 import { requireAuth } from '../auth/middleware.js';
 import { matchFindingsVisibleToUser } from '../findings/findingVisibility.js';
 import { readScheduledScanEnv } from '../scheduler/bugScan.js';
-import { resolveMongoUri } from '../config/mongoUri.js';
 
 type RepoRow = {
     repoFullName: string;
@@ -30,11 +29,8 @@ type InstallationRow = {
 
 export type DashboardSummary = {
     generatedAt: string;
-    serverPort: number;
-    mongodb: {
-        uriConfigured: boolean;
-        connected: boolean;
-        readyState: number;
+    service: {
+        online: boolean;
     };
     findings: {
         totalStored: number | null;
@@ -43,22 +39,10 @@ export type DashboardSummary = {
     reposConfigured: number;
     repos: RepoRow[];
     installations: InstallationRow[];
-    githubWebhook: {
-        method: string;
-        path: string;
-        event: string;
-        actions: string[];
+    reviews: {
         postsPrComment: boolean;
     };
     scheduledBugScan: ReturnType<typeof readScheduledScanEnv>;
-    aiReview: {
-        pythonBin: string;
-        pythonScriptPathEnvSet: boolean;
-        defaultRelativeScript: string;
-        noCookieTokenAuthNote: string;
-        pipelineSteps: string[];
-    };
-    restEndpoints: { method: string; path: string; description: string }[];
 };
 
 async function aggregateFindingStats(userId: string): Promise<{
@@ -96,7 +80,6 @@ async function aggregateFindingStats(userId: string): Promise<{
 
 export function registerDashboardRoutes(app: Express): void {
     app.get('/api/dashboard/summary', requireAuth, async (req: Request, res: Response) => {
-        const port = Number(process.env.PORT ?? 3001);
         const userId = req.user!._id;
         const userObjectId = new Types.ObjectId(userId);
         let repos: RepoRow[] = [];
@@ -149,56 +132,17 @@ export function registerDashboardRoutes(app: Express): void {
 
         const summary: DashboardSummary = {
             generatedAt: new Date().toISOString(),
-            serverPort: port,
-            mongodb: {
-                uriConfigured: Boolean(resolveMongoUri()),
-                connected: mongoose.connection.readyState === 1,
-                readyState: mongoose.connection.readyState,
+            service: {
+                online: mongoose.connection.readyState === 1,
             },
             findings: findingStats,
             reposConfigured,
             repos,
             installations,
-            githubWebhook: {
-                method: 'POST',
-                path: '/api/webhooks/github',
-                event: 'pull_request',
-                actions: ['opened', 'synchronize'],
+            reviews: {
                 postsPrComment: true,
             },
             scheduledBugScan: readScheduledScanEnv(),
-            aiReview: {
-                pythonBin: process.env.PYTHON_BIN ?? 'python',
-                pythonScriptPathEnvSet: Boolean(process.env.PYTHON_SCRIPT_PATH?.trim()),
-                defaultRelativeScript: 'scripts/pythonExploit.py',
-                noCookieTokenAuthNote:
-                    'pythonExploit.py posts to the Gemini web endpoint using only minimal static HTTP headers — no Cookie, Authorization Bearer, or custom API token headers.',
-                pipelineSteps: [
-                    'Webhook lookup -> Installation -> userId -> RepoConfig (auto-create defaults)',
-                    'When useAstGrep: fetch PR head files -> ast-grep scan (bundled rules) -> prompt + persisted findings',
-                    'reviewPullRequest fetches PR diff via fetchPrDiffString (multiple GitHub REST fallbacks)',
-                    'Senior-engineer prompt: scores, notes, blockers, concrete bugs[] with line anchors in the diff',
-                    'pythonExploit streams JSON { prompt, diff } to Gemini and returns review text',
-                    'parseEnforcerResponse extracts fenced JSON plus prose; merge thresholds + SECURITY_VETO',
-                    'parseDiffHunks + bugsToReviewComments split bugs into inline review comments and orphan bullets',
-                    'octokit.rest.pulls.createReview posts ONE review with summary body + inline line comments anchored to the diff',
-                    'upsertPrReviewFindings persists each bug by SHA-256 dedupeKey + emits SSE events to the owning user',
-                ],
-            },
-            restEndpoints: [
-                { method: 'POST', path: '/api/webhooks/github', description: 'GitHub App webhook: PR opened/sync' },
-                { method: 'GET', path: '/api/findings', description: 'List persisted AI bugs (filters, paging)' },
-                { method: 'GET', path: '/api/findings/by-category', description: 'Category counts with same filters' },
-                {
-                    method: 'GET',
-                    path: '/api/dashboard/summary',
-                    description: 'Runtime + config snapshot for dashboards (this response)',
-                },
-                { method: 'GET', path: '/api/events', description: 'SSE stream of finding/config/installation events' },
-                { method: 'GET', path: '/api/repo-configs', description: 'List the current user repo configurations' },
-                { method: 'GET', path: '/api/installations', description: 'List the current user GitHub App installations' },
-                { method: 'GET', path: '/api/keys', description: 'List the current user API keys' },
-            ],
         };
 
         res.json(summary);

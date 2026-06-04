@@ -1,6 +1,95 @@
 @import 'tailwindcss';
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-bg: var(--app-bg);
+  --color-surface: var(--app-surface);
+  --color-elevated: var(--app-elevated);
+  --color-line: var(--app-line);
+  --color-fg: var(--app-fg);
+  --color-muted: var(--app-muted);
+  --color-faint: var(--app-faint);
+  --color-accent: var(--app-accent);
+  --color-accent-strong: var(--app-accent-strong);
+}
+
+:root {
+  --app-bg: #f1f5f9;
+  --app-surface: #ffffff;
+  --app-elevated: #f8fafc;
+  --app-line: #e2e8f0;
+  --app-fg: #0f172a;
+  --app-muted: #64748b;
+  --app-faint: #94a3b8;
+  --app-accent: #7c3aed;
+  --app-accent-strong: #6d28d9;
+  color-scheme: light;
+}
+
+.dark {
+  --app-bg: #020617;
+  --app-surface: #0f172a;
+  --app-elevated: #1e293b;
+  --app-line: #1e293b;
+  --app-fg: #e2e8f0;
+  --app-muted: #94a3b8;
+  --app-faint: #64748b;
+  --app-accent: #8b5cf6;
+  --app-accent-strong: #7c3aed;
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
+  background-color: var(--app-bg);
+  color: var(--app-fg);
+}
+
+/* Modern range slider used for the merge-minimum-score control. */
+.range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--range-fill, var(--app-elevated));
+  cursor: pointer;
+  outline: none;
+}
+
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2px solid var(--app-accent);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
+  transition: transform 0.1s ease;
+}
+
+.range-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+}
+
+.range-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--app-accent) 35%, transparent);
+}
+
+.range-slider::-moz-range-thumb {
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2px solid var(--app-accent);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
+}
+
+.range-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: transparent;
 }

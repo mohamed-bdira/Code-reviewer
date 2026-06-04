@@ -22,9 +22,9 @@ export default function AuthFinishPage() {
     }, [params, setSessionFromToken, navigate]);
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
+        <div className="flex min-h-screen items-center justify-center bg-bg text-muted">
             {error ? (
-                <p className="text-sm text-rose-300">{error}</p>
+                <p className="text-sm text-rose-500 dark:text-rose-300">{error}</p>
             ) : (
                 <p className="text-sm">Finishing GitHub sign-in…</p>
             )}

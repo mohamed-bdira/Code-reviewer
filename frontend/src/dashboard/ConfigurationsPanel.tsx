@@ -18,11 +18,16 @@ import {
 } from '../api/repoConfigs';
 import { formatIso } from './formatters';
 
-const FOCUS_OPTIONS = ['security', 'style', 'css', 'performance', 'tests', 'docs', 'a11y'] as const;
+const FOCUS_OPTIONS = ['security', 'style', 'css', 'performance', 'tests', 'docs'] as const;
 const ENFORCEMENT_OPTIONS: ('warning' | 'error')[] = ['warning', 'error'];
 /** Must match server [PFE/backend/src/routes/repoConfigs.ts] FOCUS_TAG_PATTERN */
 const FOCUS_TAG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const MAX_FOCUS_AREAS = 16;
+
+const INPUT_CLASS =
+    'mt-1 w-full rounded-md border border-line bg-elevated px-2 py-1.5 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none';
+const ERROR_BOX_CLASS =
+    'rounded-lg border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200';
 
 export default function ConfigurationsPanel() {
     const [installations, setInstallations] = useState<Installation[]>([]);
@@ -50,11 +55,7 @@ export default function ConfigurationsPanel() {
 
     return (
         <div className="space-y-8">
-            {error && (
-                <div className="rounded border border-rose-900 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
-                    {error}
-                </div>
-            )}
+            {error && <div className={ERROR_BOX_CLASS}>{error}</div>}
 
             <InstallationsSection
                 installations={installations}
@@ -135,11 +136,11 @@ function InstallationsSection({
     };
 
     return (
-        <section className="space-y-4">
+        <section className="space-y-4 rounded-xl border border-line bg-surface p-5">
             <header>
-                <h3 className="text-sm font-semibold text-white">GitHub App installations</h3>
-                <p className="mt-1 text-xs text-slate-500">
-                    Each linked installation gives this account access to a GitHub user/org's repositories.
+                <h3 className="text-sm font-semibold text-fg">GitHub App installations</h3>
+                <p className="mt-1 text-xs text-muted">
+                    Each linked installation gives this account access to a GitHub user or organization's repositories.
                 </p>
             </header>
 
@@ -148,58 +149,51 @@ function InstallationsSection({
                     type="button"
                     disabled={installBusy}
                     onClick={() => void onInstallOnGithub()}
-                    className="rounded bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-60"
+                    className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong disabled:opacity-60"
                 >
                     {installBusy ? 'Opening GitHub…' : 'Install on GitHub'}
                 </button>
-                <span className="text-xs text-slate-500">
-                    or paste an installation ID below
-                </span>
+                <span className="text-xs text-muted">or paste an installation ID below</span>
             </div>
-            <p className="text-xs text-slate-500">
-                Requires <code className="rounded bg-black/30 px-1">GITHUB_APP_SLUG</code> (or{' '}
-                <code className="rounded bg-black/30 px-1">GITHUB_APP_INSTALL_URL</code>) in server env. Sends you to
-                GitHub&apos;s install screen for your app.
-            </p>
 
             <form onSubmit={onAdd} className="flex flex-wrap items-end gap-2">
-                <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Manual installationId
+                <label className="block text-xs font-medium uppercase tracking-wide text-muted">
+                    Manual installation ID
                     <input
                         type="text"
                         inputMode="numeric"
                         value={manual}
                         onChange={(e) => setManual(e.target.value)}
                         placeholder="e.g. 12345678"
-                        className="mt-1 w-56 rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                        className={`${INPUT_CLASS} w-56`}
                     />
                 </label>
                 <button
                     type="submit"
                     disabled={busy}
-                    className="rounded border border-slate-600 px-3 py-1.5 text-sm hover:bg-slate-800 disabled:opacity-50"
+                    className="rounded-md border border-line px-3 py-1.5 text-sm text-fg transition-colors hover:bg-elevated disabled:opacity-50"
                 >
                     {busy ? 'Linking…' : 'Link'}
                 </button>
             </form>
-            {err && <p className="text-xs text-rose-300">{err}</p>}
+            {err && <p className="text-xs text-rose-500 dark:text-rose-300">{err}</p>}
 
             {loading && installations.length === 0 ? (
-                <p className="text-sm text-slate-500">Loading…</p>
+                <p className="text-sm text-muted">Loading…</p>
             ) : installations.length === 0 ? (
-                <p className="text-sm text-slate-500">No installations linked yet.</p>
+                <p className="text-sm text-muted">No installations linked yet.</p>
             ) : (
-                <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900/40">
+                <ul className="divide-y divide-line rounded-lg border border-line bg-elevated">
                     {installations.map((inst) => (
                         <li key={inst.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-                            <span className="font-mono text-emerald-300">{inst.accountLogin}</span>
-                            <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">{inst.accountType}</span>
-                            <span className="font-mono text-xs text-slate-500">id {inst.installationId}</span>
-                            <span className="text-xs text-slate-600">linked {formatIso(inst.createdAt)}</span>
+                            <span className="font-mono text-accent">{inst.accountLogin}</span>
+                            <span className="rounded-full bg-surface px-2 py-0.5 text-xs text-muted">{inst.accountType}</span>
+                            <span className="font-mono text-xs text-faint">id {inst.installationId}</span>
+                            <span className="text-xs text-faint">linked {formatIso(inst.createdAt)}</span>
                             <button
                                 type="button"
                                 onClick={() => onUnlink(inst.id)}
-                                className="ml-auto rounded border border-rose-900 px-2 py-1 text-xs text-rose-300 hover:bg-rose-950"
+                                className="ml-auto rounded-md border border-rose-300 px-2 py-1 text-xs text-rose-600 transition-colors hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950"
                             >
                                 Unlink
                             </button>
@@ -228,17 +222,16 @@ function RepoConfigsSection({
         <section className="space-y-4">
             <header className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h3 className="text-sm font-semibold text-white">Per-repo review configuration</h3>
-                    <p className="mt-1 text-xs text-slate-500">
-                        Each row controls how the AI reviews a single repo. Changes are picked up immediately by the next
-                        webhook or scheduled scan.
+                    <h3 className="text-sm font-semibold text-fg">Per-repository review configuration</h3>
+                    <p className="mt-1 text-xs text-muted">
+                        Each row controls how the AI reviews a single repository. Changes apply to the next review.
                     </p>
                 </div>
                 <button
                     type="button"
                     disabled={installations.length === 0}
                     onClick={() => setAdding(true)}
-                    className="rounded bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     Add repository
                 </button>
@@ -257,10 +250,10 @@ function RepoConfigsSection({
             )}
 
             {loading && configs.length === 0 ? (
-                <p className="text-sm text-slate-500">Loading…</p>
+                <p className="text-sm text-muted">Loading…</p>
             ) : configs.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                    No repo configurations yet. Link an installation, then click "Add repository".
+                <p className="text-sm text-muted">
+                    No repository configurations yet. Link an installation, then click "Add repository".
                 </p>
             ) : (
                 <div className="space-y-4">
@@ -386,44 +379,43 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
     };
 
     return (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+        <div className="rounded-xl border border-line bg-surface p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h4 className="font-mono text-sm text-emerald-300">{config.repoFullName}</h4>
-                    <p className="text-xs text-slate-500">
+                    <h4 className="font-mono text-sm text-accent">{config.repoFullName}</h4>
+                    <p className="text-xs text-muted">
                         installation {config.installationId} · last updated {formatIso(config.updatedAt)}
                     </p>
                 </div>
                 <button
                     type="button"
                     onClick={onDelete}
-                    className="rounded border border-rose-900 px-2 py-1 text-xs text-rose-300 hover:bg-rose-950"
+                    className="rounded-md border border-rose-300 px-2 py-1 text-xs text-rose-600 transition-colors hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950"
                 >
                     Delete config
                 </button>
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
-                <div className="lg:col-span-2 space-y-4 rounded-lg border border-slate-800/80 bg-slate-950/30 p-4">
+                <div className="lg:col-span-2 space-y-4 rounded-lg border border-line bg-elevated p-4">
                     <div>
-                        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        <h5 className="text-xs font-semibold uppercase tracking-wide text-muted">
                             Review focus dimensions
                         </h5>
-                        <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                            Each tag becomes an extra scoring section and emphasis in the AI prompt (merged server-side with{' '}
-                            <code className="rounded bg-slate-900 px-1 text-slate-300">security</code>,{' '}
-                            <code className="rounded bg-slate-900 px-1 text-slate-300">style</code>,{' '}
-                            <code className="rounded bg-slate-900 px-1 text-slate-300">usability</code>). Use{' '}
-                            <strong className="text-slate-400">Custom rules</strong> below for prose instructions (e.g. “prefer Tailwind over raw CSS”).
+                        <p className="mt-1 text-xs leading-relaxed text-muted">
+                            Each tag becomes an extra scoring section and emphasis in the review (merged with{' '}
+                            <code className="rounded bg-surface px-1 text-fg">security</code>,{' '}
+                            <code className="rounded bg-surface px-1 text-fg">style</code>, and{' '}
+                            <code className="rounded bg-surface px-1 text-fg">usability</code>). Use{' '}
+                            <strong className="text-fg">Custom rules</strong> below for prose instructions.
                         </p>
-                        <p className="mt-1 text-xs text-slate-600">
-                            Up to {MAX_FOCUS_AREAS} dimensions · lowercase tags only ·{' '}
-                            <span className="font-mono text-slate-500">a-z 0-9 _ -</span>
+                        <p className="mt-1 text-xs text-faint">
+                            Up to {MAX_FOCUS_AREAS} dimensions · lowercase tags only
                         </p>
                     </div>
 
                     <div>
-                        <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                             Quick suggestions
                         </label>
                         <div className="mt-2 flex flex-wrap gap-2">
@@ -434,10 +426,10 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
                                         type="button"
                                         key={area}
                                         onClick={() => onToggleFocus(area)}
-                                        className={`rounded-full border px-3 py-1 text-xs ${
+                                        className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                                             on
-                                                ? 'border-violet-500 bg-violet-600/30 text-white'
-                                                : 'border-slate-700 bg-slate-950 text-slate-400 hover:bg-slate-800'
+                                                ? 'border-accent bg-accent/20 text-fg'
+                                                : 'border-line bg-surface text-muted hover:bg-elevated'
                                         }`}
                                     >
                                         {area}
@@ -448,7 +440,7 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
                     </div>
 
                     <div className="flex flex-wrap items-end gap-2">
-                        <label className="block min-w-[200px] flex-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <label className="block min-w-[200px] flex-1 text-xs font-medium uppercase tracking-wide text-muted">
                             Add custom dimension
                             <input
                                 type="text"
@@ -459,25 +451,25 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
                                 }}
                                 onKeyDown={onCustomFocusKeyDown}
                                 placeholder="e.g. tailwind, graphql, api"
-                                className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-sm text-white placeholder:text-slate-600"
+                                className={`${INPUT_CLASS} font-mono`}
                             />
                         </label>
                         <button
                             type="button"
                             onClick={addCustomFocus}
-                            className="rounded border border-violet-600 bg-violet-600/20 px-4 py-2 text-sm text-violet-200 hover:bg-violet-600/30"
+                            className="rounded-md border border-accent bg-accent/15 px-4 py-2 text-sm text-accent transition-colors hover:bg-accent/25"
                         >
                             Add
                         </button>
                     </div>
-                    {focusErr && <p className="text-xs text-rose-400">{focusErr}</p>}
+                    {focusErr && <p className="text-xs text-rose-500 dark:text-rose-400">{focusErr}</p>}
 
                     <div>
-                        <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                             Active dimensions ({draft.focusAreas.length}/{MAX_FOCUS_AREAS})
                         </label>
                         {draft.focusAreas.length === 0 ? (
-                            <p className="mt-2 text-xs text-slate-600">
+                            <p className="mt-2 text-xs text-faint">
                                 None selected — the server falls back to defaults when this list is empty after save.
                             </p>
                         ) : (
@@ -485,13 +477,13 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
                                 {draft.focusAreas.map((tag) => (
                                     <li
                                         key={tag}
-                                        className="inline-flex items-center gap-1 rounded-full border border-slate-600 bg-slate-900 px-2.5 py-1 text-xs text-slate-200"
+                                        className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-xs text-fg"
                                     >
                                         <span className="font-mono">{tag}</span>
                                         <button
                                             type="button"
                                             onClick={() => removeFocus(tag)}
-                                            className="rounded px-1 text-slate-500 hover:bg-slate-800 hover:text-white"
+                                            className="rounded px-1 text-muted transition-colors hover:bg-elevated hover:text-fg"
                                             aria-label={`Remove ${tag}`}
                                         >
                                             ×
@@ -504,17 +496,17 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
                 </div>
 
                 <div>
-                    <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">Enforcement</label>
+                    <label className="block text-xs font-medium uppercase tracking-wide text-muted">Enforcement</label>
                     <div className="mt-2 flex gap-2">
                         {ENFORCEMENT_OPTIONS.map((level) => (
                             <button
                                 type="button"
                                 key={level}
                                 onClick={() => setDraft((d) => ({ ...d, enforcementLevel: level }))}
-                                className={`rounded border px-3 py-1.5 text-xs capitalize ${
+                                className={`rounded-md border px-3 py-1.5 text-xs capitalize transition-colors ${
                                     draft.enforcementLevel === level
-                                        ? 'border-violet-500 bg-violet-600/30 text-white'
-                                        : 'border-slate-700 bg-slate-950 text-slate-400 hover:bg-slate-800'
+                                        ? 'border-accent bg-accent/20 text-fg'
+                                        : 'border-line bg-elevated text-muted hover:bg-surface'
                                 }`}
                             >
                                 {level}
@@ -524,48 +516,59 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
                 </div>
 
                 <div>
-                    <label className="flex items-center gap-2 text-xs text-slate-400">
+                    <label className="flex items-center gap-2 text-xs text-muted">
                         <input
                             type="checkbox"
+                            className="accent-[var(--app-accent)]"
                             checked={draft.useAstGrep}
                             onChange={(e) => setDraft((d) => ({ ...d, useAstGrep: e.target.checked }))}
                         />
-                        Run ast-grep on PR head files and merge matches into findings
+                        Run static analysis (ast-grep) and merge matches into findings
                     </label>
                 </div>
 
-                <div>
-                    <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
-                        Merge minimum score: {draft.mergeMinScore}
-                    </label>
+                <div className="lg:col-span-2">
+                    <div className="flex items-center justify-between">
+                        <label className="block text-xs font-medium uppercase tracking-wide text-muted">
+                            Merge minimum score
+                        </label>
+                        <span className="rounded-md bg-accent/15 px-2 py-0.5 text-sm font-semibold text-accent">
+                            {draft.mergeMinScore}
+                        </span>
+                    </div>
                     <input
                         type="range"
                         min={0}
                         max={100}
                         value={draft.mergeMinScore}
                         onChange={(e) => setDraft((d) => ({ ...d, mergeMinScore: Number(e.target.value) }))}
-                        className="mt-2 w-full"
+                        className="range-slider mt-3"
+                        style={{
+                            ['--range-fill' as string]: `linear-gradient(to right, var(--app-accent) ${draft.mergeMinScore}%, var(--app-elevated) ${draft.mergeMinScore}%)`,
+                        }}
                     />
+                    <div className="mt-1 flex justify-between text-[10px] text-faint">
+                        <span>0</span>
+                        <span>100</span>
+                    </div>
                 </div>
 
                 <div className="lg:col-span-2">
-                    <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                         Custom rules / instructions (free-form)
                     </label>
-                    <p className="mt-1 text-xs text-slate-600">
-                        Detailed guidance for this repo — not the same as dimension tags above. Example: review CSS consistency,
-                        naming, or framework-specific patterns.
+                    <p className="mt-1 text-xs text-faint">
+                        Detailed guidance for this repository — for example, review CSS consistency, naming, or
+                        framework-specific patterns.
                     </p>
                     <textarea
                         value={draft.customRules}
                         onChange={(e) => setDraft((d) => ({ ...d, customRules: e.target.value }))}
                         rows={4}
                         maxLength={4000}
-                        className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100"
+                        className="mt-1 w-full rounded-md border border-line bg-elevated px-2 py-1.5 text-sm text-fg focus:border-accent focus:outline-none"
                     />
-                    <p className="mt-1 text-right text-[10px] text-slate-600">
-                        {draft.customRules.length}/4000
-                    </p>
+                    <p className="mt-1 text-right text-[10px] text-faint">{draft.customRules.length}/4000</p>
                 </div>
             </div>
 
@@ -574,14 +577,14 @@ function RepoConfigCard({ config, onChanged }: { config: RepoConfigView; onChang
                     type="button"
                     onClick={onSave}
                     disabled={!dirty || saving}
-                    className="rounded bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+                    className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong disabled:opacity-50"
                 >
                     {saving ? 'Saving…' : 'Save changes'}
                 </button>
                 {savedAt && !dirty && (
-                    <span className="text-xs text-emerald-400">Saved {formatIso(savedAt)}</span>
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400">Saved {formatIso(savedAt)}</span>
                 )}
-                {err && <span className="text-xs text-rose-300">{err}</span>}
+                {err && <span className="text-xs text-rose-500 dark:text-rose-300">{err}</span>}
             </div>
         </div>
     );
@@ -638,21 +641,21 @@ function AddRepoModal({
     };
 
     return (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4">
-            <div className="w-full max-w-lg space-y-4 rounded-lg border border-slate-800 bg-slate-950 p-5">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-lg space-y-4 rounded-xl border border-line bg-surface p-5 shadow-xl">
                 <header className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-white">Add repository to AI review</h4>
-                    <button onClick={onClose} className="text-xs text-slate-400 hover:text-white">
+                    <h4 className="text-sm font-semibold text-fg">Add repository to AI review</h4>
+                    <button onClick={onClose} className="text-xs text-muted transition-colors hover:text-fg">
                         Close
                     </button>
                 </header>
 
-                <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                     Installation
                     <select
                         value={installationId}
                         onChange={(e) => setInstallationId(e.target.value)}
-                        className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100"
+                        className="mt-1 w-full rounded-md border border-line bg-elevated px-2 py-1.5 text-sm text-fg focus:border-accent focus:outline-none"
                     >
                         {installations.map((i) => (
                             <option key={i.id} value={i.installationId}>
@@ -662,30 +665,28 @@ function AddRepoModal({
                     </select>
                 </label>
 
-                {loading && <p className="text-sm text-slate-500">Loading repositories…</p>}
-                {error && <p className="text-xs text-rose-300">{error}</p>}
+                {loading && <p className="text-sm text-muted">Loading repositories…</p>}
+                {error && <p className="text-xs text-rose-500 dark:text-rose-300">{error}</p>}
 
                 {!loading && !error && (
-                    <ul className="max-h-72 overflow-y-auto rounded border border-slate-800">
+                    <ul className="max-h-72 divide-y divide-line overflow-y-auto rounded-lg border border-line">
                         {repos.length === 0 && (
-                            <li className="px-3 py-2 text-sm text-slate-500">No repositories accessible to this installation.</li>
+                            <li className="px-3 py-2 text-sm text-muted">No repositories accessible to this installation.</li>
                         )}
                         {repos.map((r) => {
                             const taken = existing.has(r.fullName);
                             return (
                                 <li
                                     key={r.fullName}
-                                    className="flex items-center justify-between gap-3 border-b border-slate-800 px-3 py-2 text-sm last:border-0"
+                                    className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
                                 >
-                                    <span className="font-mono text-emerald-300">{r.fullName}</span>
-                                    <span className="text-xs text-slate-500">
-                                        {r.private ? 'private' : 'public'}
-                                    </span>
+                                    <span className="font-mono text-accent">{r.fullName}</span>
+                                    <span className="text-xs text-muted">{r.private ? 'private' : 'public'}</span>
                                     <button
                                         type="button"
                                         disabled={taken || creating === r.fullName}
                                         onClick={() => onCreate(r.fullName)}
-                                        className="ml-auto rounded border border-slate-600 px-2 py-1 text-xs hover:bg-slate-800 disabled:opacity-40"
+                                        className="ml-auto rounded-md border border-line px-2 py-1 text-xs text-fg transition-colors hover:bg-elevated disabled:opacity-40"
                                     >
                                         {taken ? 'Already added' : creating === r.fullName ? 'Adding…' : 'Add'}
                                     </button>

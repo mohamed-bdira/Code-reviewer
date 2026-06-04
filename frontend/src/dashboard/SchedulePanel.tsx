@@ -5,29 +5,35 @@ export default function SchedulePanel({ summary }: { summary: DashboardSummary |
 
     return (
         <div className="space-y-6">
-            <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Periodic open-PR scan — <code className="text-slate-400">ENABLE_BUG_SCAN</code>
-                </h3>
+            <section className="rounded-xl border border-line bg-surface p-5">
+                <h3 className="text-sm font-semibold text-fg">Scheduled scan</h3>
+                <p className="mt-1 text-sm text-muted">
+                    Periodically re-scans the open pull requests on your connected repositories, in addition to live
+                    reviews triggered on each update.
+                </p>
+
                 {!s ? (
-                    <p className="text-sm text-slate-500">Load summary.</p>
+                    <p className="mt-4 text-sm text-muted">Loading…</p>
                 ) : (
                     <>
-                        <p className={`mb-4 text-lg font-medium ${s.enabled ? 'text-emerald-400' : 'text-slate-500'}`}>
-                            {s.enabled ? 'Scheduler armed' : 'Scheduler off'}
-                        </p>
-                        <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                            <KV k="BUG_SCAN_INTERVAL_MINUTES" v={String(s.intervalMinutes)} hint="runs setInterval(ms)" />
-                            <KV k="BUG_SCAN_MAX_PRS_PER_REPO" v={String(s.maxPrsPerRepo)} hint="caps pulls.list fan-out" />
-                            <KV k="BUG_SCAN_POST_COMMENTS" v={s.postComments ? 'true (noisy)' : 'false'} />
-                            <KV k="BUG_SCAN_SKIP_UNCHANGED" v={s.skipUnchanged ? 'skip same headSha' : 'always run'} />
-                            <KV k="BUG_SCAN_RUN_ON_START" v={s.runOnStart ? 'yes' : 'no'} hint="immediate first tick in process" />
+                        <div className="mt-4 flex items-center gap-2">
+                            <span
+                                className={`inline-block h-2.5 w-2.5 rounded-full ${
+                                    s.enabled ? 'bg-emerald-500' : 'bg-faint'
+                                }`}
+                            />
+                            <span className="text-base font-medium text-fg">
+                                {s.enabled ? 'Scheduled scan enabled' : 'Scheduled scan off'}
+                            </span>
+                        </div>
+
+                        <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                            <KV k="Scan interval" v={`${s.intervalMinutes} min`} />
+                            <KV k="Max PRs per repository" v={String(s.maxPrsPerRepo)} />
+                            <KV k="Post review comments" v={s.postComments ? 'Yes' : 'No'} />
+                            <KV k="Skip unchanged PRs" v={s.skipUnchanged ? 'Yes' : 'No'} />
+                            <KV k="Run on startup" v={s.runOnStart ? 'Yes' : 'No'} />
                         </dl>
-                        <p className="mt-4 text-xs text-slate-500">
-                            When enabled, scans every configured repo&apos;s open PR list (Mongo RepoConfig sources of truth),
-                            skips unchanged heads optionally, routes through reviewPullRequest (same prompts as webhook, optional
-                            comment flood).
-                        </p>
                     </>
                 )}
             </section>
@@ -35,12 +41,11 @@ export default function SchedulePanel({ summary }: { summary: DashboardSummary |
     );
 }
 
-function KV({ k, v, hint }: { k: string; v: string; hint?: string }) {
+function KV({ k, v }: { k: string; v: string }) {
     return (
-        <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-            <dt className="font-mono text-[11px] text-violet-300">{k}</dt>
-            <dd className="mt-2 text-white">{v}</dd>
-            {hint && <p className="mt-1 text-xs text-slate-600">{hint}</p>}
+        <div className="rounded-lg border border-line bg-elevated p-3">
+            <dt className="text-xs uppercase tracking-wide text-muted">{k}</dt>
+            <dd className="mt-2 text-fg">{v}</dd>
         </div>
     );
 }

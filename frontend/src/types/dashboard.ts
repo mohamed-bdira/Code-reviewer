@@ -9,11 +9,8 @@ export type ScheduledScanSnapshot = {
 
 export type DashboardSummary = {
     generatedAt: string;
-    serverPort: number;
-    mongodb: {
-        uriConfigured: boolean;
-        connected: boolean;
-        readyState: number;
+    service: {
+        online: boolean;
     };
     findings: {
         totalStored: number | null;
@@ -38,20 +35,8 @@ export type DashboardSummary = {
         accountType: 'User' | 'Organization';
         createdAt: string;
     }[];
-    githubWebhook: {
-        method: string;
-        path: string;
-        event: string;
-        actions: string[];
+    reviews: {
         postsPrComment: boolean;
     };
     scheduledBugScan: ScheduledScanSnapshot;
-    aiReview: {
-        pythonBin: string;
-        pythonScriptPathEnvSet: boolean;
-        defaultRelativeScript: string;
-        noCookieTokenAuthNote: string;
-        pipelineSteps: string[];
-    };
-    restEndpoints: { method: string; path: string; description: string }[];
 };

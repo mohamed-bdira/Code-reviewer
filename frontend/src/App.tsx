@@ -7,7 +7,7 @@ import AuthFinishPage from './pages/AuthFinishPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 
-const SECTIONS = ['overview', 'github', 'configurations', 'schedule', 'ai', 'findings', 'keys'] as const;
+const SECTIONS = ['overview', 'github', 'configurations', 'schedule', 'findings', 'keys'] as const;
 
 export default function App() {
     return (

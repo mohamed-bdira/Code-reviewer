@@ -46,26 +46,26 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-200">
-            <div className="w-full max-w-sm space-y-6 rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow">
+        <div className="flex min-h-screen items-center justify-center bg-bg px-4 text-fg">
+            <div className="w-full max-w-sm space-y-6 rounded-xl border border-line bg-surface p-6 shadow-lg">
                 <header>
-                    <h1 className="text-lg font-semibold text-white">Create your account</h1>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <h1 className="text-lg font-semibold text-fg">Create your account</h1>
+                    <p className="mt-1 text-xs text-muted">
                         After signup, install the GitHub App to start receiving AI reviews.
                     </p>
                 </header>
 
                 <form className="space-y-3" onSubmit={onSubmit}>
-                    <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                         Display name (optional)
                         <input
                             type="text"
                             value={displayName}
                             onChange={(e) => setDisplayName(e.target.value)}
-                            className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                            className="mt-1 w-full rounded-md border border-line bg-elevated px-2 py-1.5 text-sm text-fg focus:border-accent focus:outline-none"
                         />
                     </label>
-                    <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                         Email
                         <input
                             type="email"
@@ -73,10 +73,10 @@ export default function RegisterPage() {
                             required
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                            className="mt-1 w-full rounded-md border border-line bg-elevated px-2 py-1.5 text-sm text-fg focus:border-accent focus:outline-none"
                         />
                     </label>
-                    <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                         Password (min 8)
                         <input
                             type="password"
@@ -85,12 +85,12 @@ export default function RegisterPage() {
                             minLength={8}
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                            className="mt-1 w-full rounded-md border border-line bg-elevated px-2 py-1.5 text-sm text-fg focus:border-accent focus:outline-none"
                         />
                     </label>
 
                     {error && (
-                        <p className="rounded border border-rose-900 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+                        <p className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
                             {error}
                         </p>
                     )}
@@ -98,30 +98,30 @@ export default function RegisterPage() {
                     <button
                         type="submit"
                         disabled={submitting}
-                        className="w-full rounded bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-60"
+                        className="w-full rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong disabled:opacity-60"
                     >
                         {submitting ? 'Creating account…' : 'Create account'}
                     </button>
                 </form>
 
-                <div className="space-y-2 border-t border-slate-800 pt-4">
+                <div className="space-y-2 border-t border-line pt-4">
                     <a
                         href={apiBrowserUrl(`/api/auth/github/start?next=${encodeURIComponent(next)}`)}
                         onClick={onGithub}
                         target="_self"
                         rel="nofollow"
-                        className="block w-full rounded border border-slate-600 bg-slate-800 px-4 py-2 text-center text-sm font-medium text-white hover:bg-slate-700"
+                        className="block w-full rounded-md border border-line bg-elevated px-4 py-2 text-center text-sm font-medium text-fg transition-colors hover:bg-surface"
                     >
                         Continue with GitHub
                     </a>
-                    <p className="text-center text-[11px] text-slate-500">
+                    <p className="text-center text-[11px] text-muted">
                         Opens GitHub to sign in or create access, then returns you here.
                     </p>
                 </div>
 
-                <p className="text-center text-xs text-slate-500">
+                <p className="text-center text-xs text-muted">
                     Already have an account?{' '}
-                    <Link to={`/login?next=${encodeURIComponent(next)}`} className="text-violet-400 hover:underline">
+                    <Link to={`/login?next=${encodeURIComponent(next)}`} className="text-accent hover:underline">
                         Sign in
                     </Link>
                 </p>

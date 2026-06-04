@@ -6,6 +6,9 @@ import type { ServerEvent } from './useEventStream';
 
 const DEFAULT_LIMIT = 25;
 
+const INPUT_CLASS =
+    'mt-1 w-full rounded-md border border-line bg-elevated px-2 py-1.5 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none';
+
 export type AppliedFilterFields = {
     repoFullName: string;
     prNumber: string;
@@ -122,81 +125,77 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
     return (
         <div className="space-y-8">
             <div>
-                <p className="text-sm text-slate-400">
-                    Mongo collection <code className="text-slate-300">PrReviewFinding</code> —
-                    endpoints <code className="text-slate-300">GET /api/findings</code> and{' '}
-                    <code className="text-slate-300">GET /api/findings/by-category</code>. You must{' '}
-                    <strong className="text-slate-300">unlock the dashboard</strong> with your API key for these requests to succeed. Bugs are deduped with{' '}
-                    <code className="text-slate-300">dedupeKey</code>; timestamps show history across webhook and hourly
-                    scan runs.
+                <p className="text-sm text-muted">
+                    Issues found by AI review across your connected repositories. Filter by repository, pull request,
+                    category, file, or date.
                 </p>
             </div>
 
             <form
                 onSubmit={applyFilters}
-                className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/50 p-4 sm:grid-cols-2 lg:grid-cols-3"
+                className="grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-2 lg:grid-cols-3"
             >
-                <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Repo
+                <label className="block text-xs font-medium uppercase tracking-wide text-muted">
+                    Repository
                     <input
                         type="text"
                         value={form.repoFullName}
                         onChange={(e) => setForm((s) => ({ ...s, repoFullName: e.target.value }))}
                         placeholder="owner/repo"
-                        className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white placeholder:text-slate-600"
+                        className={INPUT_CLASS}
                     />
                 </label>
-                <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                     PR #
                     <input
                         type="text"
                         inputMode="numeric"
                         value={form.prNumber}
                         onChange={(e) => setForm((s) => ({ ...s, prNumber: e.target.value }))}
-                        className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white placeholder:text-slate-600"
+                        className={INPUT_CLASS}
                     />
                 </label>
-                <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                     Category
                     <input
                         type="text"
                         value={form.category}
                         onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))}
-                        className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white placeholder:text-slate-600"
+                        className={INPUT_CLASS}
                     />
                 </label>
-                <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                     File contains
                     <input
                         type="text"
                         value={form.fileContains}
                         onChange={(e) => setForm((s) => ({ ...s, fileContains: e.target.value }))}
-                        className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white placeholder:text-slate-600"
+                        className={INPUT_CLASS}
                     />
                 </label>
-                <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                     Description contains
                     <input
                         type="text"
                         value={form.q}
                         onChange={(e) => setForm((s) => ({ ...s, q: e.target.value }))}
-                        className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white placeholder:text-slate-600"
+                        className={INPUT_CLASS}
                     />
                 </label>
-                <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Since (firstSeenAt ISO)
+                <label className="block text-xs font-medium uppercase tracking-wide text-muted">
+                    Since (ISO date)
                     <input
                         type="text"
                         value={form.since}
                         onChange={(e) => setForm((s) => ({ ...s, since: e.target.value }))}
                         placeholder="2026-01-01T00:00:00Z"
-                        className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white placeholder:text-slate-600"
+                        className={INPUT_CLASS}
                     />
                 </label>
                 <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-3">
                     <button
                         type="submit"
-                        className="rounded bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500"
+                        className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong"
                     >
                         Apply
                     </button>
@@ -208,7 +207,7 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                             setApplied(cleared);
                             setSkip(0);
                         }}
-                        className="rounded border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                        className="rounded-md border border-line px-4 py-2 text-sm text-fg transition-colors hover:bg-elevated"
                     >
                         Clear
                     </button>
@@ -216,41 +215,29 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
             </form>
 
             {error && (
-                <div className="rounded border border-amber-900/80 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
-                    <strong className="font-medium">Could not load findings.</strong> {error}
-                    <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-amber-200/90">
-                        <li>
-                            <strong className="font-medium text-amber-100">401</strong> — session or API key rejected (revoked key or expired login). Regenerate a key or sign in again, then unlock the dashboard.
-                        </li>
-                        <li>
-                            Wrong API host — set <code className="rounded bg-black/30 px-1">VITE_API_BASE_URL</code> to your backend base URL if the SPA is not served behind the same origin as <code className="rounded bg-black/30 px-1">/api</code>.
-                        </li>
-                        <li>
-                            Backend on port 3001 + Mongo required; dev proxies <code className="rounded bg-black/30 px-1">/api</code>.
-                        </li>
-                    </ul>
+                <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/80 dark:bg-amber-950/40 dark:text-amber-200">
+                    <strong className="font-medium">Could not load findings.</strong> Please make sure you have unlocked
+                    the dashboard with a valid API key, then try again.
                 </div>
             )}
 
             <section>
-                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Counts by category
-                </h3>
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Counts by category</h3>
                 {error ? (
-                    <p className="text-sm text-slate-500">Counts unavailable until the request above succeeds.</p>
+                    <p className="text-sm text-muted">Counts unavailable until the request above succeeds.</p>
                 ) : loading && !counts ? (
-                    <p className="text-sm text-slate-500">Loading…</p>
+                    <p className="text-sm text-muted">Loading…</p>
                 ) : orderedCategories.length === 0 ? (
-                    <p className="text-sm text-slate-500">No rows for these filters (or nothing stored yet).</p>
+                    <p className="text-sm text-muted">No results for these filters yet.</p>
                 ) : (
                     <ul className="flex flex-wrap gap-2">
                         {orderedCategories.map(([cat, n]) => (
                             <li
                                 key={cat}
-                                className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-sm"
+                                className="rounded-full border border-line bg-elevated px-3 py-1 text-sm"
                             >
-                                <span className="text-slate-300">{cat}</span>
-                                <span className="ml-2 font-mono text-violet-400">{n}</span>
+                                <span className="text-fg">{cat}</span>
+                                <span className="ml-2 font-mono text-accent">{n}</span>
                             </li>
                         ))}
                     </ul>
@@ -259,18 +246,18 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
 
             <section>
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Findings table</h3>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Findings</h3>
                     {!loading && list && (
-                        <span className="text-xs text-slate-500">
-                            {list.items.length} / {list.total} (skip {list.skip})
+                        <span className="text-xs text-muted">
+                            {list.items.length} of {list.total}
                         </span>
                     )}
                 </div>
 
-                <div className="overflow-x-auto rounded-lg border border-slate-800">
+                <div className="overflow-x-auto rounded-xl border border-line">
                     <table className="w-full min-w-[680px] border-collapse text-left text-sm">
                         <thead>
-                            <tr className="border-b border-slate-800 bg-slate-900/80 text-xs uppercase tracking-wide text-slate-500">
+                            <tr className="border-b border-line bg-elevated text-xs uppercase tracking-wide text-muted">
                                 <th className="px-3 py-2 font-medium">Category</th>
                                 <th className="px-3 py-2 font-medium">Repo / PR</th>
                                 <th className="px-3 py-2 font-medium">File</th>
@@ -283,7 +270,7 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                         <tbody>
                             {loading && (
                                 <tr>
-                                    <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
+                                    <td colSpan={7} className="px-3 py-8 text-center text-muted">
                                         Loading…
                                     </td>
                                 </tr>
@@ -291,16 +278,12 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                             {!loading && list && list.items.length === 0 && (
                                 <tr>
                                     <td colSpan={7} className="px-3 py-8">
-                                        <p className="text-center text-slate-400">No findings match this query.</p>
-                                        <ul className="mx-auto mt-3 max-w-lg list-inside list-disc space-y-1 text-left text-xs text-slate-500">
+                                        <p className="text-center text-muted">No findings match this query.</p>
+                                        <ul className="mx-auto mt-3 max-w-lg list-inside list-disc space-y-1 text-left text-xs text-faint">
+                                            <li>Try clearing the filters above to widen the search.</li>
                                             <li>
-                                                Clear filters above — narrow repo, PR, category, or date can hide everything.
-                                            </li>
-                                            <li>
-                                                Rows are scoped to <strong className="text-slate-400">your account</strong> in MongoDB (<code className="text-slate-400">PrReviewFinding.userId</code> or legacy docs for repos in your <strong className="text-slate-400">Configurations</strong>).
-                                            </li>
-                                            <li>
-                                                If the count stays 0 after PRs: confirm the GitHub App installation is linked, webhooks reach the server, and reviews run (server logs).
+                                                Findings appear after a connected repository's pull requests are
+                                                reviewed.
                                             </li>
                                         </ul>
                                     </td>
@@ -308,23 +291,23 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                             )}
                             {!loading &&
                                 list?.items.map((row) => (
-                                    <tr key={row._id} className="border-b border-slate-800/80 hover:bg-slate-900/40">
-                                        <td className="px-3 py-2 align-top capitalize text-violet-300">{row.category}</td>
+                                    <tr key={row._id} className="border-b border-line hover:bg-elevated">
+                                        <td className="px-3 py-2 align-top capitalize text-accent">{row.category}</td>
                                         <td className="px-3 py-2 align-top">
-                                            <div className="font-mono text-xs text-slate-300">{row.repoFullName}</div>
-                                            <div className="text-slate-500">#{row.prNumber}</div>
+                                            <div className="font-mono text-xs text-fg">{row.repoFullName}</div>
+                                            <div className="text-muted">#{row.prNumber}</div>
                                         </td>
-                                        <td className="max-w-[160px] px-3 py-2 align-top font-mono text-xs text-emerald-300/90">
+                                        <td className="max-w-[160px] px-3 py-2 align-top font-mono text-xs text-accent">
                                             {row.filePath}
                                         </td>
-                                        <td className="whitespace-nowrap px-3 py-2 align-top font-mono text-xs text-slate-400">
+                                        <td className="whitespace-nowrap px-3 py-2 align-top font-mono text-xs text-muted">
                                             {formatLines(row)}
                                         </td>
-                                        <td className="max-w-md px-3 py-2 align-top text-slate-300">{row.description}</td>
-                                        <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-slate-500">
+                                        <td className="max-w-md px-3 py-2 align-top text-fg">{row.description}</td>
+                                        <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-faint">
                                             {formatIso(row.firstSeenAt)}
                                         </td>
-                                        <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-slate-500">
+                                        <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-faint">
                                             {formatIso(row.lastSeenAt)}
                                         </td>
                                     </tr>
@@ -339,7 +322,7 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                             type="button"
                             disabled={!canPrev}
                             onClick={() => setSkip(Math.max(0, skip - limit))}
-                            className="rounded border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800 disabled:opacity-40"
+                            className="rounded-md border border-line px-3 py-1.5 text-sm text-fg transition-colors hover:bg-elevated disabled:opacity-40"
                         >
                             Previous
                         </button>
@@ -347,7 +330,7 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                             type="button"
                             disabled={!canNext}
                             onClick={() => setSkip(skip + limit)}
-                            className="rounded border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800 disabled:opacity-40"
+                            className="rounded-md border border-line px-3 py-1.5 text-sm text-fg transition-colors hover:bg-elevated disabled:opacity-40"
                         >
                             Next
                         </button>

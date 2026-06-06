@@ -1,0 +1,27 @@
+$kind: http-request
+name: 'Link Installation - Invalid ID'
+method: POST
+url: '{{baseUrl}}/api/installations'
+headers:
+  - key: Authorization
+    value: 'Bearer {{authToken}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "installationId": "not-a-number"
+    }
+description: 'Link installation with non-numeric ID — should return 400.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 400 for non-numeric installationId", function () {
+        pm.expect(pm.response.code).to.equal(400);
+      });
+      pm.test("Error mentions numeric requirement", function () {
+        const json = pm.response.json();
+        pm.expect(json.error).to.include("numeric");
+      });

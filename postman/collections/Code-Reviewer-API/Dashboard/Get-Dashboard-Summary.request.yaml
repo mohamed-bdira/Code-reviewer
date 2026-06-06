@@ -1,0 +1,38 @@
+$kind: http-request
+name: Get Dashboard Summary
+method: GET
+url: '{{baseUrl}}/api/dashboard/summary'
+headers:
+  - key: Authorization
+    value: 'Bearer {{authToken}}'
+description: 'Get a full dashboard summary including findings stats, repos, installations, and service health.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 200", function () {
+        pm.expect(pm.response.code).to.equal(200);
+      });
+      pm.test("Response has generatedAt timestamp", function () {
+        const json = pm.response.json();
+        pm.expect(json).to.have.property("generatedAt");
+      });
+      pm.test("Response has service.online field", function () {
+        const json = pm.response.json();
+        pm.expect(json.service).to.have.property("online");
+      });
+      pm.test("Response has findings stats", function () {
+        const json = pm.response.json();
+        pm.expect(json).to.have.property("findings");
+        pm.expect(json.findings).to.have.property("topCategories");
+      });
+      pm.test("Response has repos array", function () {
+        const json = pm.response.json();
+        pm.expect(json).to.have.property("repos");
+        pm.expect(json.repos).to.be.an("array");
+      });
+      pm.test("Response has installations array", function () {
+        const json = pm.response.json();
+        pm.expect(json).to.have.property("installations");
+        pm.expect(json.installations).to.be.an("array");
+      });

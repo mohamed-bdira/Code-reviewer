@@ -1,0 +1,19 @@
+$kind: http-request
+name: 'Revoke API Key - Invalid ID'
+method: DELETE
+url: '{{baseUrl}}/api/keys/not-a-valid-id'
+headers:
+  - key: Authorization
+    value: 'Bearer {{authToken}}'
+description: 'Revoke with a non-ObjectId — should return 400.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 400 for invalid id", function () {
+        pm.expect(pm.response.code).to.equal(400);
+      });
+      pm.test("Error is Invalid id", function () {
+        const json = pm.response.json();
+        pm.expect(json.error).to.equal("Invalid id");
+      });

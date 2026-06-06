@@ -1,0 +1,25 @@
+$kind: http-request
+name: 'Login - Missing Fields'
+method: POST
+url: '{{baseUrl}}/api/auth/login'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "testuser@example.com"
+    }
+description: 'Login with missing password — should return 400.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 400 when password missing", function () {
+        pm.expect(pm.response.code).to.equal(400);
+      });
+      pm.test("Error message present", function () {
+        const json = pm.response.json();
+        pm.expect(json).to.have.property("error");
+      });

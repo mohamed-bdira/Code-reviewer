@@ -1,0 +1,28 @@
+$kind: http-request
+name: 'Create Repo Config - Invalid repoFullName'
+method: POST
+url: '{{baseUrl}}/api/repo-configs'
+headers:
+  - key: Authorization
+    value: 'Bearer {{authToken}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "installationId": "12345",
+      "repoFullName": "noslash"
+    }
+description: 'Create repo config with repoFullName missing a slash — should return 400.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 400 for invalid repoFullName", function () {
+        pm.expect(pm.response.code).to.equal(400);
+      });
+      pm.test("Error mentions owner/repo format", function () {
+        const json = pm.response.json();
+        pm.expect(json.error).to.include("owner/repo");
+      });

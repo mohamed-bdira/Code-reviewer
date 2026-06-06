@@ -79,7 +79,7 @@ export default function DashboardApp() {
             <div className="flex min-h-screen">
                 <aside className="sticky top-0 flex h-screen w-56 shrink-0 flex-col overflow-hidden border-r border-line bg-surface">
                     <div className="border-b border-line px-4 py-5">
-                        <h1 className="text-sm font-semibold leading-tight text-fg">PFE dashboard</h1>
+                        <h1 className="text-sm font-semibold leading-tight text-fg">Dashboard</h1>
                         <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
                             <span
                                 className={`inline-block h-1.5 w-1.5 rounded-full ${

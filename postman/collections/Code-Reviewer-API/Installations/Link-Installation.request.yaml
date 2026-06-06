@@ -1,0 +1,30 @@
+$kind: http-request
+name: Link Installation
+method: POST
+url: '{{baseUrl}}/api/installations'
+headers:
+  - key: Authorization
+    value: 'Bearer {{authToken}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "installationId": "{{installationId}}"
+    }
+description: 'Link a GitHub App installation to the authenticated user.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 201 or 400 or 409", function () {
+        pm.expect(pm.response.code).to.be.oneOf([201, 400, 409]);
+      });
+      if (pm.response.code === 201) {
+        pm.test("Response has installation object", function () {
+          const json = pm.response.json();
+          pm.expect(json).to.have.property("installation");
+          pm.expect(json.installation).to.have.property("installationId");
+        });
+      }

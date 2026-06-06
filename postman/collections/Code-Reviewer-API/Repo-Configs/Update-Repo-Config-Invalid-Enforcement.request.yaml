@@ -1,0 +1,27 @@
+$kind: http-request
+name: 'Update Repo Config - Invalid enforcementLevel'
+method: PATCH
+url: '{{baseUrl}}/api/repo-configs/{{repoConfigId}}'
+headers:
+  - key: Authorization
+    value: 'Bearer {{authToken}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "enforcementLevel": "critical"
+    }
+description: 'Update with invalid enforcementLevel — should return 400.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 400 for invalid enforcementLevel", function () {
+        pm.expect(pm.response.code).to.equal(400);
+      });
+      pm.test("Error mentions warning or error", function () {
+        const json = pm.response.json();
+        pm.expect(json.error).to.include("warning or error");
+      });

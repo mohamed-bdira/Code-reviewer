@@ -1,0 +1,41 @@
+$kind: http-request
+name: Register
+method: POST
+url: '{{baseUrl}}/api/auth/register'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "testuser@example.com",
+      "password": "password123",
+      "displayName": "Test User"
+    }
+description: 'Register a new user. Returns a JWT token and user object.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 201 on success", function () {
+        pm.expect(pm.response.code).to.be.oneOf([201, 409]);
+      });
+      if (pm.response.code === 201) {
+        pm.test("Response has token", function () {
+          const json = pm.response.json();
+          pm.expect(json).to.have.property("token");
+          pm.environment.set("authToken", json.token);
+        });
+        pm.test("Response has user object", function () {
+          const json = pm.response.json();
+          pm.expect(json.user).to.have.property("id");
+          pm.expect(json.user).to.have.property("email");
+        });
+      }
+      if (pm.response.code === 409) {
+        pm.test("Duplicate email returns 409", function () {
+          const json = pm.response.json();
+          pm.expect(json.error).to.equal("Email already registered");
+        });
+      }

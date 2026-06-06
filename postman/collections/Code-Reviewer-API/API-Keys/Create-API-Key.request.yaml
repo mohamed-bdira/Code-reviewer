@@ -1,0 +1,34 @@
+$kind: http-request
+name: Create API Key
+method: POST
+url: '{{baseUrl}}/api/keys'
+headers:
+  - key: Authorization
+    value: 'Bearer {{authToken}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "name": "My Test Key"
+    }
+description: 'Create a new API key. The plaintext key is only returned once.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 201", function () {
+        pm.expect(pm.response.code).to.equal(201);
+      });
+      pm.test("Response has plaintext key", function () {
+        const json = pm.response.json();
+        pm.expect(json).to.have.property("key");
+        pm.expect(json.key).to.be.a("string");
+      });
+      pm.test("Response has id and prefix", function () {
+        const json = pm.response.json();
+        pm.expect(json).to.have.property("id");
+        pm.expect(json).to.have.property("prefix");
+        pm.environment.set("apiKeyId", json.id);
+      });

@@ -1,0 +1,20 @@
+$kind: http-request
+name: List Repo Configs
+method: GET
+url: '{{baseUrl}}/api/repo-configs'
+headers:
+  - key: Authorization
+    value: 'Bearer {{authToken}}'
+description: 'List all repository configurations for the authenticated user.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 200", function () {
+        pm.expect(pm.response.code).to.equal(200);
+      });
+      pm.test("Response has items array", function () {
+        const json = pm.response.json();
+        pm.expect(json).to.have.property("items");
+        pm.expect(json.items).to.be.an("array");
+      });

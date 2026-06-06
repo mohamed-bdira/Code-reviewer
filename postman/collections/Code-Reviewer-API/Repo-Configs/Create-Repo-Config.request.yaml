@@ -1,0 +1,32 @@
+$kind: http-request
+name: Create Repo Config
+method: POST
+url: '{{baseUrl}}/api/repo-configs'
+headers:
+  - key: Authorization
+    value: 'Bearer {{authToken}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "installationId": "{{installationId}}",
+      "repoFullName": "owner/my-repo"
+    }
+description: 'Create a new repo config. installationId must be numeric and repoFullName must contain a slash.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 201 or 404 or 409", function () {
+        pm.expect(pm.response.code).to.be.oneOf([201, 404, 409]);
+      });
+      if (pm.response.code === 201) {
+        pm.test("Response has config object", function () {
+          const json = pm.response.json();
+          pm.expect(json).to.have.property("config");
+          pm.expect(json.config).to.have.property("id");
+          pm.environment.set("repoConfigId", json.config.id);
+        });
+      }

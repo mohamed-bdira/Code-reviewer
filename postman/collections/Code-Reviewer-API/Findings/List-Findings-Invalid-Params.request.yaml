@@ -1,0 +1,19 @@
+$kind: http-request
+name: 'List Findings - Invalid Params'
+method: GET
+url: '{{baseUrl}}/api/findings?prNumber=abc'
+headers:
+  - key: Authorization
+    value: 'Bearer {{authToken}}'
+description: 'List findings with invalid prNumber — should return 400.'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status 400 for invalid prNumber", function () {
+        pm.expect(pm.response.code).to.equal(400);
+      });
+      pm.test("Error is Invalid prNumber", function () {
+        const json = pm.response.json();
+        pm.expect(json.error).to.equal("Invalid prNumber");
+      });

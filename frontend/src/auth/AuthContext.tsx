@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { fetchMe, login as loginApi, register as registerApi, type AuthResponse, type AuthUser } from '../api/auth';
+import { fetchMe, type AuthUser } from '../api/auth';
 import {
     getStoredServiceKey,
     getStoredToken,
@@ -14,8 +14,6 @@ type AuthContextShape = {
     token: string | null;
     serviceKey: string | null;
     initializing: boolean;
-    login: (email: string, password: string) => Promise<void>;
-    register: (email: string, password: string, displayName?: string) => Promise<void>;
     logout: () => void;
     setSessionFromToken: (token: string) => Promise<void>;
     setServiceKey: (key: string | null) => void;
@@ -76,34 +74,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
     }, [token]);
 
-    const applyAuth = useCallback((auth: AuthResponse) => {
-        setStoredServiceKey(null);
-        setServiceKeyState(null);
-        setStoredToken(auth.token);
-        setToken(auth.token);
-        setUser(auth.user);
-    }, []);
-
-    const login = useCallback(
-        async (email: string, password: string) => {
-            const auth = await loginApi({ email, password });
-            applyAuth(auth);
-        },
-        [applyAuth],
-    );
-
-    const register = useCallback(
-        async (email: string, password: string, displayName?: string) => {
-            const auth = await registerApi({
-                email,
-                password,
-                ...(displayName ? { displayName } : {}),
-            });
-            applyAuth(auth);
-        },
-        [applyAuth],
-    );
-
     const setSessionFromToken = useCallback(async (incoming: string) => {
         setStoredServiceKey(null);
         setServiceKeyState(null);
@@ -125,13 +95,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             token,
             serviceKey,
             initializing,
-            login,
-            register,
             logout,
             setSessionFromToken,
             setServiceKey,
         }),
-        [user, token, serviceKey, initializing, login, register, logout, setSessionFromToken, setServiceKey],
+        [user, token, serviceKey, initializing, logout, setSessionFromToken, setServiceKey],
     );
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

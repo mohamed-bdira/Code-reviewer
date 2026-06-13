@@ -1,13 +1,9 @@
 import type { Express, Request, Response } from 'express';
 import express from 'express';
 import User from '../../models/User.js';
-import { hashPassword, verifyPassword } from '../auth/passwords.js';
 import { signSession } from '../auth/tokens.js';
 import { requireAuth } from '../auth/middleware.js';
 import { sanitizePostLoginPath } from '../auth/sanitizePostLoginPath.js';
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MIN_PW = 8;
 
 type UserView = {
     id: string;
@@ -44,67 +40,6 @@ function escapeHtml(s: string): string {
 export function registerAuthRoutes(app: Express): void {
     const router = express.Router();
     router.use(express.json());
-
-    router.post('/register', async (req: Request, res: Response) => {
-        const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-        const password = typeof req.body?.password === 'string' ? req.body.password : '';
-        const displayName =
-            typeof req.body?.displayName === 'string' && req.body.displayName.trim().length > 0
-                ? req.body.displayName.trim()
-                : undefined;
-
-        if (!EMAIL_RE.test(email)) {
-            res.status(400).json({ error: 'Invalid email' });
-            return;
-        }
-        if (password.length < MIN_PW) {
-            res.status(400).json({ error: `Password must be at least ${MIN_PW} characters` });
-            return;
-        }
-
-        const existing = await User.findOne({ email }).lean().exec();
-        if (existing) {
-            res.status(409).json({ error: 'Email already registered' });
-            return;
-        }
-
-        try {
-            const passwordHash = await hashPassword(password);
-            const created = await User.create({
-                email,
-                passwordHash,
-                ...(displayName !== undefined ? { displayName } : {}),
-            });
-            const token = signSession({ sub: String(created._id), email: created.email });
-            res.status(201).json({ token, user: toUserView(created.toObject()) });
-        } catch (err) {
-            console.error('[auth] register failed', err);
-            res.status(500).json({ error: 'Registration failed' });
-        }
-    });
-
-    router.post('/login', async (req: Request, res: Response) => {
-        const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-        const password = typeof req.body?.password === 'string' ? req.body.password : '';
-
-        if (!email || !password) {
-            res.status(400).json({ error: 'Email and password are required' });
-            return;
-        }
-
-        const user = await User.findOne({ email }).exec();
-        if (!user || !user.passwordHash) {
-            res.status(401).json({ error: 'Invalid email or password' });
-            return;
-        }
-        const ok = await verifyPassword(password, user.passwordHash);
-        if (!ok) {
-            res.status(401).json({ error: 'Invalid email or password' });
-            return;
-        }
-        const token = signSession({ sub: String(user._id), email: user.email });
-        res.json({ token, user: toUserView(user.toObject()) });
-    });
 
     router.get('/me', requireAuth, async (req: Request, res: Response) => {
         const user = await User.findById(req.user!._id).lean().exec();
@@ -251,7 +186,7 @@ export function registerAuthRoutes(app: Express): void {
                 if (user) {
                     if (user.githubId != null && user.githubId !== ghUser.id) {
                         const msg =
-                            'This email is already linked to a different GitHub account. Sign in with email/password or use the matching GitHub account.';
+                            'This email is already linked to a different GitHub account. Use the GitHub account already linked to this email.';
                         if (req.accepts('html')) {
                             res.status(409)
                                 .type('html')

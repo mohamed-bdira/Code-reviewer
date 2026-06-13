@@ -83,18 +83,11 @@ export function setStoredServiceKey(key: string | null): void {
     }
 }
 
-function shouldOmitDefaultBearer(path: string): boolean {
-    return path.startsWith('/api/auth/register') || path.startsWith('/api/auth/login');
-}
-
 function usesSessionJwtOnly(path: string): boolean {
     return path.startsWith('/api/keys');
 }
 
 function pickBearerToken(path: string): string | null {
-    if (shouldOmitDefaultBearer(path)) {
-        return null;
-    }
     const session = getStoredToken();
     if (usesSessionJwtOnly(path)) {
         return session;

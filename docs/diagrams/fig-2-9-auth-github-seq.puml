@@ -1,0 +1,55 @@
+@startuml fig-2-9-auth-github-seq
+' GitHub-only authentication (email/password register/login removed).
+'
+' Arrow style: open / hollow arrowheads (black outline, white fill).
+' - Do NOT use "skinparam style strictuml" — that draws solid filled triangles.
+' - "sequenceArrowHead nice" keeps PlantUML's open (non-filled) arrowheads.
+' Requires PlantUML 1.2021+ (VS Code PlantUML extension or plantuml.com).
+
+hide footbox
+skinparam backgroundColor white
+skinparam sequenceArrowHead nice
+skinparam sequenceArrowColor black
+skinparam sequenceArrowThickness 1
+skinparam ParticipantBackgroundColor white
+skinparam ParticipantBorderColor black
+skinparam ActorBorderColor black
+skinparam LifeLineBorderColor black
+
+title Authentication sequence — Sign in with GitHub
+
+actor User
+participant "Frontend SPA" as SPA
+participant "Auth API" as API
+database "MongoDB" as DB
+
+User -> SPA : Click Sign in with GitHub
+SPA -> API : GET /api/auth/github/start?next=...
+API -> User : Redirect to GitHub authorize\n(scope: read:user, user:email)
+User -> API : GET /api/auth/github/callback?code&state
+
+activate API
+API -> API : Exchange code for access token;\nfetch GitHub profile and email
+
+API -> DB : find or create user by githubId
+activate DB
+return user record
+deactivate DB
+
+API -> API : sign JWT session
+deactivate API
+
+API -> User : Redirect /auth/finish?token&next
+User -> SPA : Load /auth/finish
+
+activate SPA
+SPA -> API : GET /api/auth/me\n(Bearer JWT)
+activate API
+return user profile
+deactivate API
+
+SPA -> SPA : store session and route to dashboard
+return authenticated dashboard access
+deactivate SPA
+
+@enduml

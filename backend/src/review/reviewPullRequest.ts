@@ -23,7 +23,7 @@ import {
     shouldUsePreemptiveSlimGithubPost,
 } from './githubPostingStrategy.js';
 import { runAstGrepOnPrFiles } from './astGrep.js';
-import { delayMs, runPythonReview } from './pythonReview.js';
+import { delayMs, runGeminiReview } from './geminiReview.js';
 
 /** Workspace-root NDJSON log (debug session); path from …/backend/src/review → repo root `pfe/`. */
 const _reviewPullRequestDir = dirname(fileURLToPath(import.meta.url));
@@ -510,7 +510,7 @@ END_DIFF`;
         console.log(
             !hasDiff ? 'Generating review with AI (no diff)...' : 'Generating review with AI (no diff after filters)...',
         );
-        aiReviewText = await runPythonReview(prompt, '');
+        aiReviewText = await runGeminiReview(prompt, '');
         parsed = parseEnforcerResponse(aiReviewText);
     } else if (segments.length === 1) {
         const diffString = segments[0] ?? '';
@@ -531,7 +531,7 @@ BEGIN_DIFF
 ${diffString}
 END_DIFF`;
         console.log('Generating review with AI (single diff segment)...');
-        aiReviewText = await runPythonReview(prompt, diffString);
+        aiReviewText = await runGeminiReview(prompt, diffString);
         parsed = parseEnforcerResponse(aiReviewText);
     } else {
         console.log(
@@ -581,7 +581,7 @@ END_DIFF`;
             }
 
             console.log(`Generating review segment ${k}/${segments.length}...`);
-            const segmentText = await runPythonReview(prompt, chunk);
+            const segmentText = await runGeminiReview(prompt, chunk);
             const pauseMs = segmentDelayBetweenAiCallsMs();
             if (pauseMs > 0 && !isLast) {
                 await delayMs(pauseMs);

@@ -1,14 +1,11 @@
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getGithubAppKeyStatus } from './githubAppKey.js';
 import { describeMissingMongoEnv, resolveMongoUri } from './mongoUri.js';
+import { isGeminiApiKeyConfigured } from '../review/geminiReview.js';
 import { getAstGrepStatus } from '../review/astGrep.js';
 
-export type PythonBridgeStatus = {
-    bin: string;
-    scriptPath: string;
-    scriptFound: boolean;
+export type GeminiReviewStatus = {
+    apiKeySet: boolean;
+    model: string;
 };
 
 export type HealthSnapshot = {
@@ -19,36 +16,15 @@ export type HealthSnapshot = {
         appIdSet: boolean;
         privateKeySet: boolean;
     };
-    python: PythonBridgeStatus;
+    gemini: GeminiReviewStatus;
     issues: string[];
 };
 
-function defaultPythonBin(env: NodeJS.ProcessEnv): string {
-    if (env.PYTHON_BIN?.trim()) {
-        return env.PYTHON_BIN.trim();
-    }
-    return process.platform === 'win32' ? 'python' : 'python3';
-}
-
-function resolvePythonScriptPath(env: NodeJS.ProcessEnv): string {
-    const cwd = process.cwd();
-    const envRaw = env.PYTHON_SCRIPT_PATH?.trim() ?? '';
-    if (envRaw) {
-        return path.resolve(cwd, envRaw);
-    }
-    const fromSrc = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'scripts', 'pythonExploit.py');
-    if (existsSync(fromSrc)) {
-        return fromSrc;
-    }
-    return path.resolve(cwd, 'scripts', 'pythonExploit.py');
-}
-
-export function getPythonBridgeStatus(env: NodeJS.ProcessEnv = process.env): PythonBridgeStatus {
-    const scriptPath = resolvePythonScriptPath(env);
+export function getGeminiReviewStatus(env: NodeJS.ProcessEnv = process.env): GeminiReviewStatus {
+    const model = env.GEMINI_MODEL?.trim() || 'gemini-2.0-flash';
     return {
-        bin: defaultPythonBin(env),
-        scriptPath,
-        scriptFound: existsSync(scriptPath),
+        apiKeySet: isGeminiApiKeyConfigured(env),
+        model,
     };
 }
 
@@ -105,13 +81,13 @@ export function collectStartupChecks(
             : 'Unset — webhooks accepted without signature verification (unsafe in production)',
     });
 
-    const py = getPythonBridgeStatus(env);
+    const gemini = getGeminiReviewStatus(env);
     checks.push({
-        ok: py.scriptFound,
-        label: 'Python AI bridge',
-        detail: py.scriptFound
-            ? `${py.bin} → ${py.scriptPath}`
-            : `Script not found at ${py.scriptPath}`,
+        ok: gemini.apiKeySet,
+        label: 'GEMINI_API_KEY',
+        detail: gemini.apiKeySet
+            ? `Set (model: ${gemini.model})`
+            : 'Missing — PR AI reviews will fail',
     });
 
     const sg = getAstGrepStatus(env);
@@ -149,7 +125,7 @@ export function buildHealthSnapshot(mongoReadyState: number): HealthSnapshot {
     const mongoUriConfigured = Boolean(resolveMongoUri());
     const mongodb = mongoReadyState === 1 ? 'connected' : 'disconnected';
     const gh = getGithubAppKeyStatus();
-    const python = getPythonBridgeStatus();
+    const gemini = getGeminiReviewStatus();
     const issues: string[] = [];
 
     if (!mongoUriConfigured) {
@@ -165,15 +141,15 @@ export function buildHealthSnapshot(mongoReadyState: number): HealthSnapshot {
             'GITHUB_APP_PRIVATE_KEY is missing (PEM files are not copied into Docker — set the env var on Railway)',
         );
     }
-    if (!python.scriptFound) {
-        issues.push(`Python review script not found at ${python.scriptPath}`);
+    if (!gemini.apiKeySet) {
+        issues.push('GEMINI_API_KEY is missing — PR AI reviews will fail');
     }
 
     const ok =
         mongodb === 'connected' &&
         gh.appIdSet &&
         gh.privateKeyConfigured &&
-        python.scriptFound;
+        gemini.apiKeySet;
 
     return {
         ok,
@@ -183,7 +159,7 @@ export function buildHealthSnapshot(mongoReadyState: number): HealthSnapshot {
             appIdSet: gh.appIdSet,
             privateKeySet: gh.privateKeyConfigured,
         },
-        python,
+        gemini,
         issues,
     };
 }

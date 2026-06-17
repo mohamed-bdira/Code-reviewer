@@ -9,7 +9,7 @@
     "build": "tsc",
     "start": "node dist/src/server.js",
     "smoke:enforcer": "tsx scripts/enforcer-smoke.ts",
-    "smoke:python-bridge": "tsx scripts/pythonBridge-smoke.ts"
+    "smoke:gemini": "tsx scripts/gemini-smoke.ts"
   },
   "repository": {
     "type": "git",
@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@ast-grep/cli": "^0.43.0",
+    "@google/generative-ai": "^0.24.1",
     "@octokit/auth-app": "^8.2.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.6",

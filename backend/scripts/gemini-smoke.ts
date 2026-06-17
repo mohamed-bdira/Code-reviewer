@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { parseEnforcerResponse } from '../src/enforcer/parseEnforcerResponse.js';
-import { delayMs, runPythonReview } from '../src/review/pythonReview.js';
+import { delayMs, runGeminiReview } from '../src/review/geminiReview.js';
 
 const prompt = `You are a senior software engineer reviewing a pull request.
 Repository: owner/demo
@@ -27,8 +27,12 @@ BEGIN_DIFF
 END_DIFF`;
 
 async function main(): Promise<void> {
-    if (process.env.SKIP_PYTHON_BRIDGE_SMOKE === '1') {
-        console.log('[pythonBridge-smoke] skipped (SKIP_PYTHON_BRIDGE_SMOKE=1)');
+    if (process.env.SKIP_GEMINI_SMOKE === '1') {
+        console.log('[gemini-smoke] skipped (SKIP_GEMINI_SMOKE=1)');
+        return;
+    }
+    if (!process.env.GEMINI_API_KEY?.trim()) {
+        console.log('[gemini-smoke] skipped (GEMINI_API_KEY not set)');
         return;
     }
 
@@ -36,26 +40,20 @@ async function main(): Promise<void> {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
         try {
-            console.log(`[pythonBridge-smoke] attempt ${attempt}/2…`);
-            const raw = await runPythonReview(prompt, diff);
+            console.log(`[gemini-smoke] attempt ${attempt}/2…`);
+            const raw = await runGeminiReview(prompt, diff);
             assert.ok(raw.length > 40, 'expected non-trivial model output');
             const parsed = parseEnforcerResponse(raw);
             assert.ok(parsed.data || parsed.orphanParsedBugs.length > 0, 'expected structured JSON in model output');
             console.log(
-                '[pythonBridge-smoke] ok — bugs:',
+                '[gemini-smoke] ok — bugs:',
                 parsed.data?.bugs.length ?? parsed.orphanParsedBugs.length,
             );
             return;
         } catch (err) {
             lastErr = err;
-            const msg = err instanceof Error ? err.message : String(err);
-            if (/barderrorinfo code 1155/i.test(msg)) {
-                console.warn(
-                    '[pythonBridge-smoke] Gemini returned BardErrorInfo 1155 (rate limit). Wait 15–30 minutes, then retry the PR.',
-                );
-            }
             if (attempt < 2) {
-                console.warn('[pythonBridge-smoke] retrying after upstream flake…');
+                console.warn('[gemini-smoke] retrying after upstream flake…');
                 await delayMs(8000);
             }
         }
@@ -64,6 +62,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-    console.error('[pythonBridge-smoke] failed:', err);
+    console.error('[gemini-smoke] failed:', err);
     process.exit(1);
 });

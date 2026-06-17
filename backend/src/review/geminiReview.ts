@@ -1,0 +1,125 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash';
+
+let client: GoogleGenerativeAI | null = null;
+
+function geminiApiKey(): string {
+    const key = process.env.GEMINI_API_KEY?.trim() ?? '';
+    if (!key) {
+        throw new Error('GEMINI_API_KEY is not set — PR AI reviews require a Google AI Studio API key');
+    }
+    return key;
+}
+
+function geminiModelName(): string {
+    const raw = process.env.GEMINI_MODEL?.trim();
+    return raw && raw.length > 0 ? raw : DEFAULT_GEMINI_MODEL;
+}
+
+function getGeminiClient(): GoogleGenerativeAI {
+    if (!client) {
+        client = new GoogleGenerativeAI(geminiApiKey());
+    }
+    return client;
+}
+
+function upstreamTimeoutMs(): number {
+    const raw = Number(process.env.AI_REVIEW_UPSTREAM_TIMEOUT_SEC ?? 120);
+    if (!Number.isFinite(raw) || raw <= 0) {
+        return 180_000;
+    }
+    return Math.min(300, Math.max(30, Math.floor(raw))) * 1000;
+}
+
+/** Same merge rules as the former pythonExploit.py build_final_prompt. */
+export function buildReviewPrompt(prompt: string, diff: string): string {
+    const p = prompt.trim();
+    const d = diff.trim();
+    if (p && d) {
+        return `${p}\n\nBEGIN_DIFF\n${d}\nEND_DIFF`;
+    }
+    return p;
+}
+
+/** Small pause between segmented AI calls to reduce upstream rate limiting. */
+export async function delayMs(ms: number): Promise<void> {
+    const n = Math.max(0, Math.floor(ms));
+    if (n <= 0) return;
+    await new Promise<void>((resolve) => {
+        setTimeout(resolve, n);
+    });
+}
+
+export function isRetriableUpstreamError(message: string): boolean {
+    const m = message.toLowerCase();
+    if (/\b429\b/.test(m)) return true;
+    if (/\b502\b|\b503\b|\b504\b/.test(m)) return true;
+    if (/rate[\s_-]?limit/.test(m)) return true;
+    if (/too many requests/.test(m)) return true;
+    if (/resource_exhausted/.test(m)) return true;
+    if (/overload|unavailable|try again/.test(m)) return true;
+    if (/timed out|timeout|deadline exceeded/.test(m)) return true;
+    if (/fetch failed|network|econnreset|etimedout/.test(m)) return true;
+    if (/service unavailable/.test(m)) return true;
+    return false;
+}
+
+export function computeRetryBackoffMs(attempt: number, baseDelayMs: number): number {
+    const jitter = Math.floor(Math.random() * 500);
+    return Math.floor(baseDelayMs * 2 ** (attempt - 1) + jitter);
+}
+
+async function runGeminiReviewOnce(prompt: string, diff: string): Promise<string> {
+    const fullPrompt = buildReviewPrompt(prompt, diff);
+    const model = getGeminiClient().getGenerativeModel({ model: geminiModelName() });
+    const timeoutMs = upstreamTimeoutMs();
+
+    const result = await Promise.race([
+        model.generateContent(fullPrompt),
+        new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error(`gemini review timed out after ${timeoutMs}ms`)), timeoutMs);
+        }),
+    ]);
+
+    const text = result.response.text()?.trim() ?? '';
+    if (!text) {
+        throw new Error('gemini returned empty response');
+    }
+    return text;
+}
+
+/**
+ * Runs the official Gemini SDK with retries after likely rate-limit / overload / timeout responses.
+ */
+export async function runGeminiReview(prompt: string, diff: string): Promise<string> {
+    const maxAttemptsRaw = Number(process.env.AI_REVIEW_RETRY_MAX ?? 5);
+    const maxAttempts = Number.isFinite(maxAttemptsRaw) && maxAttemptsRaw > 0 ? Math.floor(maxAttemptsRaw) : 5;
+    const baseDelayRaw = Number(process.env.AI_REVIEW_RETRY_BASE_MS ?? 5000);
+    const baseDelayMs = Number.isFinite(baseDelayRaw) && baseDelayRaw >= 0 ? baseDelayRaw : 5000;
+
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+            return await runGeminiReviewOnce(prompt, diff);
+        } catch (err) {
+            lastErr = err;
+            const msg = err instanceof Error ? err.message : String(err);
+            const retriable = isRetriableUpstreamError(msg);
+            if (!retriable || attempt >= maxAttempts) {
+                throw err;
+            }
+            const backoff = computeRetryBackoffMs(attempt, baseDelayMs);
+            console.warn(
+                `[geminiReview] retriable upstream error (${attempt}/${maxAttempts}): ${msg.slice(0, 220)} … waiting ${backoff}ms`,
+            );
+            await delayMs(backoff);
+        }
+    }
+    throw lastErr;
+}
+
+/** True when GEMINI_API_KEY is configured (startup / health checks). */
+export function isGeminiApiKeyConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+    return Boolean(env.GEMINI_API_KEY?.trim());
+}

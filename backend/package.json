@@ -8,7 +8,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/src/server.js",
-    "smoke:enforcer": "tsx scripts/enforcer-smoke.ts"
+    "smoke:enforcer": "tsx scripts/enforcer-smoke.ts",
+    "smoke:python-bridge": "tsx scripts/pythonBridge-smoke.ts"
   },
   "repository": {
     "type": "git",

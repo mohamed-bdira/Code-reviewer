@@ -46,8 +46,6 @@ if (!mongoUri) {
         });
 }
 
-logStartupChecklist(mongoose.connection.readyState);
-
 app.use(cors({
     origin: (process.env.FRONTEND_BASE_URL ?? 'http://localhost:5173').replace(/\/$/, ''),
     credentials: false,

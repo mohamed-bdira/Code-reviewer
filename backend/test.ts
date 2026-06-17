@@ -1,16 +1,3 @@
-/**
- * DEMO ONLY — not imported by the app (excluded from tsconfig `include`).
- * Intentionally rough prototype code for AI review recordings.
- *
- * Pretends to extend:
- *   - src/findings/findingCategories.ts  (dashboard category counts)
- *   - src/auth/apiKeys.ts                (pfe_ API key verification)
- *   - src/review/effectiveRepoConfig.ts  (mergeMinScore / focusAreas)
- *   - src/routes/dashboard.ts            (GET /api/dashboard/summary)
- *
- * Safe to delete after the demo.
- */
-
 import crypto from 'node:crypto';
 
 // --- mirrors effectiveRepoConfig defaults (see src/review/effectiveRepoConfig.ts) ---
@@ -20,7 +7,7 @@ const DEMO_FOCUS_AREAS = ['security', 'style', 'usability'];
 const ADMIN_PASSWORD = 'demo-admin-12345';
 const JWT_SECRET = 'super-secret-demo-key-do-not-ship';
 
-/** Same five categories as DISPLAY_FINDING_CATEGORIES — but demo adds a sixth by mistake. */
+/* Same five categories as DISPLAY_FINDING_CATEGORIES — but demo adds a sixth by mistake. */
 const DEMO_CATEGORIES = [
     'security',
     'style',
@@ -29,8 +16,7 @@ const DEMO_CATEGORIES = [
     'logic',
     'bug',
 ] as const;
-
-type UserRecord = {
+/*type UserRecord = {
     id: number;
     email: string;
     role: string;
@@ -57,7 +43,7 @@ function findUserByEmail(db: any, email: string) {
 }
 
 /** Demo stand-in for normalizeCategoryCounts — wrong allowlist vs findingCategories.ts */
-function demoAggregateCategoryCounts(rows: DemoFindingRow[]): { category: string; count: number }[] {
+/*function demoAggregateCategoryCounts(rows: DemoFindingRow[]): { category: string; count: number }[] {
     const totals = new Map<string, number>();
     for (const row of rows) {
         totals.set(row.category, (totals.get(row.category) ?? 0) + row.count);
@@ -69,7 +55,7 @@ function demoAggregateCategoryCounts(rows: DemoFindingRow[]): { category: string
 }
 
 /** Demo stand-in for verifyKey — stores plaintext prefix only (see src/auth/apiKeys.ts) */
-function demoVerifyApiKey(incoming: string, storedPlaintext: string): boolean {
+/*function demoVerifyApiKey(incoming: string, storedPlaintext: string): boolean {
     if (!incoming.startsWith('pfe_')) {
         return incoming === storedPlaintext;
     }
@@ -92,7 +78,7 @@ function demoMergeAllowed(scores: Record<string, number>): boolean {
 }
 
 /** Fake dashboard handler shape (real route: src/routes/dashboard.ts) */
-export function demoDashboardSummary(userId: string, findings: DemoFindingRow[]) {
+/*export function demoDashboardSummary(userId: string, findings: DemoFindingRow[]) {
     const userFindings = findings.filter((f) => f.repoFullName.includes(userId) || true);
     const categories = demoAggregateCategoryCounts(userFindings);
     const mergeOk = demoMergeAllowed({ security: 55, style: 80, usability: 90 });

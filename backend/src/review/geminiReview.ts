@@ -15,7 +15,28 @@ function geminiApiKey(): string {
 
 export function resolveGeminiModelName(env: NodeJS.ProcessEnv = process.env): string {
     const raw = env.GEMINI_MODEL?.trim();
-    return raw && raw.length > 0 ? raw : DEFAULT_GEMINI_MODEL;
+    const resolved = raw && raw.length > 0 ? raw : DEFAULT_GEMINI_MODEL;
+    // #region agent log
+    fetch('http://127.0.0.1:7361/ingest/ce185b65-e675-4766-a57b-ec2db6ddc92a', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '09aad7' },
+        body: JSON.stringify({
+            sessionId: '09aad7',
+            runId: 'pre-fix',
+            hypothesisId: 'H1',
+            location: 'geminiReview.ts:resolveGeminiModelName',
+            message: 'gemini model resolved',
+            data: {
+                source: raw && raw.length > 0 ? 'env' : 'default',
+                envModel: raw && raw.length > 0 ? raw : null,
+                defaultModel: DEFAULT_GEMINI_MODEL,
+                resolved,
+            },
+            timestamp: Date.now(),
+        }),
+    }).catch(() => {});
+    // #endregion
+    return resolved;
 }
 
 function getGeminiClient(): GoogleGenerativeAI {
@@ -111,6 +132,25 @@ export async function runGeminiReview(prompt: string, diff: string): Promise<str
             lastErr = err;
             const msg = err instanceof Error ? err.message : String(err);
             if (/403 forbidden|denied access/i.test(msg)) {
+                // #region agent log
+                fetch('http://127.0.0.1:7361/ingest/ce185b65-e675-4766-a57b-ec2db6ddc92a', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '09aad7' },
+                    body: JSON.stringify({
+                        sessionId: '09aad7',
+                        runId: 'pre-fix',
+                        hypothesisId: 'H2',
+                        location: 'geminiReview.ts:runGeminiReview:403',
+                        message: 'gemini 403 denied access',
+                        data: {
+                            model: resolveGeminiModelName(),
+                            apiKeyConfigured: isGeminiApiKeyConfigured(),
+                            errorSnippet: msg.slice(0, 120),
+                        },
+                        timestamp: Date.now(),
+                    }),
+                }).catch(() => {});
+                // #endregion
                 throw new Error(
                     `${msg.slice(0, 240)} — create a fresh API key at https://aistudio.google.com/apikey and set GEMINI_API_KEY on Railway`,
                 );

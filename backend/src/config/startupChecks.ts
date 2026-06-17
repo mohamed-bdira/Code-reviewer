@@ -82,6 +82,12 @@ export function collectStartupChecks(
     });
 
     const gemini = getGeminiReviewStatus(env);
+    if (env.GEMINI_MODEL?.trim() === 'gemini-3.5-flash') {
+        console.warn(
+            '[startup] GEMINI_MODEL=gemini-3.5-flash overrides the code default (gemini-2.5-flash). ' +
+                'Remove or change it on Railway — 3.5 often returns 403/503.',
+        );
+    }
     checks.push({
         ok: gemini.apiKeySet,
         label: 'GEMINI_API_KEY',

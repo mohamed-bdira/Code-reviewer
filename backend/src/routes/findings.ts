@@ -180,9 +180,12 @@ export function registerFindingsRoutes(app: Express): void {
                 { $sort: { count: -1 } },
             ]).exec();
             const counts: Record<string, number> = {};
-            const rows = parsed.categories?.length
-                ? normalizeCategoryCounts(agg).filter((row) => parsed.categories!.includes(row.category))
-                : agg.map((row) => ({ category: String(row._id), count: row.count }));
+            const rows =
+                parsed.categories?.length && agg.length > 0
+                    ? normalizeCategoryCounts(agg).filter((row) => parsed.categories!.includes(row.category))
+                    : parsed.categories?.length
+                      ? []
+                      : agg.map((row) => ({ category: String(row._id), count: row.count }));
             for (const row of rows) {
                 counts[row.category] = row.count;
             }

@@ -16,8 +16,8 @@ export default function OverviewPanel({
         <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-muted">
-                    A live snapshot of your AI code reviews — connected repositories, stored issues, and the most common
-                    categories.
+                    A live snapshot of your AI code reviews — connected repositories, stored issues, and findings by
+                    category.
                 </p>
                 <button
                     type="button"
@@ -87,9 +87,9 @@ export default function OverviewPanel({
                 </section>
             )}
 
-            {summary && summary.findings.topCategories.length > 0 && (
+            {summary && summary.findings.totalStored != null && summary.findings.totalStored > 0 && (
                 <section className="rounded-xl border border-line bg-surface p-5">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Top issue categories</h3>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Issue categories</h3>
                     <ul className="mt-3 flex flex-wrap gap-2">
                         {summary.findings.topCategories.map(({ category, count }) => (
                             <li

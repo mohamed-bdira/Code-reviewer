@@ -4,7 +4,7 @@ import Installation from '../../models/Installation.js';
 import PrReviewFinding from '../../models/PrReviewFinding.js';
 import RepoConfig from '../../models/RepoConfig.js';
 import { requireAuth } from '../auth/middleware.js';
-import { DISPLAY_FINDING_CATEGORIES } from '../findings/findingCategories.js';
+import { DISPLAY_FINDING_CATEGORIES, normalizeCategoryCounts } from '../findings/findingCategories.js';
 import { matchFindingsVisibleToUser } from '../findings/findingVisibility.js';
 import { readScheduledScanEnv } from '../scheduler/bugScan.js';
 
@@ -83,10 +83,7 @@ async function aggregateFindingStats(userId: string): Promise<{
         ]).exec();
         const bucket = agg[0];
         const totalStored = bucket?.total?.[0]?.n ?? 0;
-        const topCategories = (bucket?.cats ?? []).map((c) => ({
-            category: String(c._id),
-            count: c.count,
-        }));
+        const topCategories = normalizeCategoryCounts(bucket?.cats ?? []);
         return { totalStored, topCategories };
     } catch {
         return { totalStored: null, topCategories: [] };

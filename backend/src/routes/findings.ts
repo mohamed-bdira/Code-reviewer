@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import PrReviewFinding from '../../models/PrReviewFinding.js';
-import { parseCategoriesQueryParam } from '../findings/findingCategories.js';
+import { normalizeCategoryCounts, parseCategoriesQueryParam } from '../findings/findingCategories.js';
 import { matchFindingsVisibleToUser } from '../findings/findingVisibility.js';
 import { requireAuth } from '../auth/middleware.js';
 
@@ -180,8 +180,11 @@ export function registerFindingsRoutes(app: Express): void {
                 { $sort: { count: -1 } },
             ]).exec();
             const counts: Record<string, number> = {};
-            for (const row of agg) {
-                counts[String(row._id)] = row.count;
+            const rows = parsed.categories?.length
+                ? normalizeCategoryCounts(agg).filter((row) => parsed.categories!.includes(row.category))
+                : agg.map((row) => ({ category: String(row._id), count: row.count }));
+            for (const row of rows) {
+                counts[row.category] = row.count;
             }
             res.json({ counts });
         } catch (e) {

@@ -76,6 +76,23 @@ export function isRetriableUpstreamError(message: string): boolean {
     return false;
 }
 
+/** BardErrorInfo 1155 is Gemini web throttling — needs longer pauses than generic flakes. */
+export function isBardRateLimitError(message: string): boolean {
+    return /barderrorinfo[^\d]*1155/i.test(message);
+}
+
+/** Exponential backoff; Bard 1155 uses 15s → 30s → 60s … base instead of generic 5s steps. */
+export function computeRetryBackoffMs(
+    attempt: number,
+    baseDelayMs: number,
+    message: string,
+): number {
+    const bard = isBardRateLimitError(message);
+    const effectiveBase = bard ? Math.max(baseDelayMs, 15_000) : baseDelayMs;
+    const jitter = Math.floor(Math.random() * 500);
+    return Math.floor(effectiveBase * 2 ** (attempt - 1) + jitter);
+}
+
 function isUnavailableReviewOutput(output: string): boolean {
     return output.includes(REVIEW_UNAVAILABLE_MARKER);
 }
@@ -196,8 +213,8 @@ function runPythonReviewOnce(prompt: string, diff: string): Promise<string> {
  * Large PRs fire many sequential segment calls — combine with AI_REVIEW_SEGMENT_DELAY_MS between segments if needed.
  */
 export async function runPythonReview(prompt: string, diff: string): Promise<string> {
-    const maxAttemptsRaw = Number(process.env.AI_REVIEW_RETRY_MAX ?? 3);
-    const maxAttempts = Number.isFinite(maxAttemptsRaw) && maxAttemptsRaw > 0 ? Math.floor(maxAttemptsRaw) : 3;
+    const maxAttemptsRaw = Number(process.env.AI_REVIEW_RETRY_MAX ?? 5);
+    const maxAttempts = Number.isFinite(maxAttemptsRaw) && maxAttemptsRaw > 0 ? Math.floor(maxAttemptsRaw) : 5;
     const baseDelayRaw = Number(process.env.AI_REVIEW_RETRY_BASE_MS ?? 5000);
     const baseDelayMs = Number.isFinite(baseDelayRaw) && baseDelayRaw >= 0 ? baseDelayRaw : 5000;
 
@@ -212,7 +229,7 @@ export async function runPythonReview(prompt: string, diff: string): Promise<str
             if (!retriable || attempt >= maxAttempts) {
                 throw err;
             }
-            const backoff = Math.floor(baseDelayMs * 2 ** (attempt - 1) + Math.random() * 500);
+            const backoff = computeRetryBackoffMs(attempt, baseDelayMs, msg);
             console.warn(
                 `[pythonReview] retriable upstream error (${attempt}/${maxAttempts}): ${msg.slice(0, 220)} … waiting ${backoff}ms`,
             );

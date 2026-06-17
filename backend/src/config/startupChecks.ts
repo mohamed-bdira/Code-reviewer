@@ -1,6 +1,6 @@
 import { getGithubAppKeyStatus } from './githubAppKey.js';
 import { describeMissingMongoEnv, resolveMongoUri } from './mongoUri.js';
-import { isGeminiApiKeyConfigured } from '../review/geminiReview.js';
+import { isGeminiApiKeyConfigured, resolveGeminiModelName } from '../review/geminiReview.js';
 import { getAstGrepStatus } from '../review/astGrep.js';
 
 export type GeminiReviewStatus = {
@@ -21,7 +21,7 @@ export type HealthSnapshot = {
 };
 
 export function getGeminiReviewStatus(env: NodeJS.ProcessEnv = process.env): GeminiReviewStatus {
-    const model = env.GEMINI_MODEL?.trim() || 'gemini-2.0-flash';
+    const model = resolveGeminiModelName(env);
     return {
         apiKeySet: isGeminiApiKeyConfigured(env),
         model,

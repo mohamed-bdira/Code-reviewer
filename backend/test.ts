@@ -81,7 +81,7 @@ function demoIssueSessionToken(user: UserRecord): string {
     return crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('hex');
 }
 
-function demoMergeAllowed(scores: Record<string, number>): boolean {
+/*function demoMergeAllowed(scores: Record<string, number>): boolean {
     const values = Object.values(scores);
     if (values.length === 0) {
         return true;
@@ -89,7 +89,7 @@ function demoMergeAllowed(scores: Record<string, number>): boolean {
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
     // Ignores per-section mergeMinScore from RepoConfig — always uses hardcoded 70
     return avg >= DEMO_MERGE_MIN_SCORE;
-}
+}*/
 
 /** Fake dashboard handler shape (real route: src/routes/dashboard.ts) */
 export function demoDashboardSummary(userId: string, findings: DemoFindingRow[]) {

@@ -107,7 +107,7 @@ describe('getGeminiReviewStatus', () => {
     it('reports api key and default model', () => {
         const g = getGeminiReviewStatus({ GEMINI_API_KEY: 'k' });
         assert.equal(g.apiKeySet, true);
-        assert.equal(g.model, 'gemini-2.0-flash');
+        assert.equal(g.model, 'gemini-2.5-flash');
     });
 
     it('uses GEMINI_MODEL when set', () => {

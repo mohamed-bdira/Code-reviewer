@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchCategoryCounts, fetchFindings, type FindingFilters } from '../api/findings';
+import { DISPLAY_FINDING_CATEGORIES, fetchCategoryCounts, fetchFindings, type FindingFilters } from '../api/findings';
 import type { CategoryCountsResponse, FindingsListResponse, PrReviewFinding } from '../types/findings';
 import { formatIso } from './formatters';
 import type { ServerEvent } from './useEventStream';
@@ -157,12 +157,18 @@ export default function FindingsPanel({ lastEvent }: { lastEvent?: ServerEvent |
                 </label>
                 <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                     Category
-                    <input
-                        type="text"
+                    <select
                         value={form.category}
                         onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))}
                         className={INPUT_CLASS}
-                    />
+                    >
+                        <option value="">All categories</option>
+                        {DISPLAY_FINDING_CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>
+                                {cat}
+                            </option>
+                        ))}
+                    </select>
                 </label>
                 <label className="block text-xs font-medium uppercase tracking-wide text-muted">
                     File contains

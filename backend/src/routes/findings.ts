@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import PrReviewFinding from '../../models/PrReviewFinding.js';
+import { parseCategoriesQueryParam } from '../findings/findingCategories.js';
 import { matchFindingsVisibleToUser } from '../findings/findingVisibility.js';
 import { requireAuth } from '../auth/middleware.js';
 
@@ -8,6 +9,7 @@ type ParsedQuery = {
     repoFullName?: string;
     prNumber?: number;
     category?: string;
+    categories?: string[];
     fileContains?: string;
     q?: string;
     since?: Date;
@@ -76,6 +78,10 @@ function parseFilters(req: Request): ParsedQuery | { error: string } {
     if (category !== undefined) {
         parsed.category = category;
     }
+    const categories = parseCategoriesQueryParam(req.query.categories);
+    if (categories !== undefined) {
+        parsed.categories = categories;
+    }
     if (fileContains !== undefined) {
         parsed.fileContains = fileContains;
     }
@@ -98,7 +104,13 @@ async function buildMatch(q: ParsedQuery, userId: string): Promise<Record<string
     if (q.prNumber !== undefined) {
         filters.prNumber = q.prNumber;
     }
-    if (q.category) {
+    if (q.categories && q.categories.length > 0) {
+        if (q.category) {
+            filters.category = q.categories.includes(q.category) ? q.category : { $in: [] };
+        } else {
+            filters.category = { $in: q.categories };
+        }
+    } else if (q.category) {
         filters.category = q.category;
     }
     if (q.fileContains) {

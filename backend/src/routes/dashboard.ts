@@ -4,6 +4,7 @@ import Installation from '../../models/Installation.js';
 import PrReviewFinding from '../../models/PrReviewFinding.js';
 import RepoConfig from '../../models/RepoConfig.js';
 import { requireAuth } from '../auth/middleware.js';
+import { DISPLAY_FINDING_CATEGORIES } from '../findings/findingCategories.js';
 import { matchFindingsVisibleToUser } from '../findings/findingVisibility.js';
 import { readScheduledScanEnv } from '../scheduler/bugScan.js';
 
@@ -61,7 +62,13 @@ async function aggregateFindingStats(userId: string): Promise<{
             return { totalStored: 0, topCategories: [] };
         }
         const visibility = await matchFindingsVisibleToUser(userId);
-        const match = { $and: [visibility, { repoFullName: { $in: repoNames } }] };
+        const match = {
+            $and: [
+                visibility,
+                { repoFullName: { $in: repoNames } },
+                { category: { $in: [...DISPLAY_FINDING_CATEGORIES] } },
+            ],
+        };
         const agg = await PrReviewFinding.aggregate<{
             total: { n: number }[];
             cats: { _id: string; count: number }[];

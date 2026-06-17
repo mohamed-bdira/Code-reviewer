@@ -63,15 +63,27 @@ export default function OverviewPanel({
                 summary.findings.totalStored === 0 &&
                 summary.findings.topCategories.length === 0 && (
                 <section className="rounded-xl border border-line bg-surface p-5">
-                    <h3 className="text-sm font-semibold text-fg">No findings yet</h3>
-                    <p className="mt-2 text-sm text-muted">
-                        Once a pull request is opened on a connected repository, AI review results will appear here and
-                        under <strong className="text-fg">Bug findings</strong>.
-                    </p>
-                    <ul className="mt-3 list-inside list-disc space-y-1 text-xs text-muted">
-                        <li>Connect a repository under <strong className="text-fg">Configurations</strong>.</li>
-                        <li>Open or update a pull request to trigger a review.</li>
-                    </ul>
+                    {summary.reposConfigured === 0 ? (
+                        <>
+                            <h3 className="text-sm font-semibold text-fg">No repositories connected yet</h3>
+                            <p className="mt-2 text-sm text-muted">
+                                Connect a repository under <strong className="text-fg">Configurations</strong> to start
+                                automatic AI reviews. Findings and category breakdowns will appear here once pull
+                                requests are reviewed.
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <h3 className="text-sm font-semibold text-fg">No findings yet</h3>
+                            <p className="mt-2 text-sm text-muted">
+                                Once a pull request is opened on a connected repository, AI review results will appear
+                                here and under <strong className="text-fg">Bug findings</strong>.
+                            </p>
+                            <ul className="mt-3 list-inside list-disc space-y-1 text-xs text-muted">
+                                <li>Open or update a pull request to trigger a review.</li>
+                            </ul>
+                        </>
+                    )}
                 </section>
             )}
 

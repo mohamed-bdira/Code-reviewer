@@ -53,12 +53,20 @@ async function aggregateFindingStats(userId: string): Promise<{
         return { totalStored: null, topCategories: [] };
     }
     try {
+        const userObjectId = new Types.ObjectId(userId);
+        const repoNames: string[] = await RepoConfig.find({ userId: userObjectId })
+            .distinct('repoFullName')
+            .exec();
+        if (repoNames.length === 0) {
+            return { totalStored: 0, topCategories: [] };
+        }
         const visibility = await matchFindingsVisibleToUser(userId);
+        const match = { $and: [visibility, { repoFullName: { $in: repoNames } }] };
         const agg = await PrReviewFinding.aggregate<{
             total: { n: number }[];
             cats: { _id: string; count: number }[];
         }>([
-            { $match: visibility },
+            { $match: match },
             {
                 $facet: {
                     total: [{ $count: 'n' }],

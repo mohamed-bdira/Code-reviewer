@@ -121,14 +121,23 @@ function InstallationsSection({
     const onInstallOnGithub = async () => {
         setErr(null);
         setInstallBusy(true);
+        const win = window.open('about:blank', '_blank');
+        if (!win) {
+            setInstallBusy(false);
+            setErr('Pop-up blocked. Allow pop-ups for this site and try again.');
+            return;
+        }
+        win.opener = null;
         try {
             const { url } = await getGithubInstallUrl();
             if (!url.startsWith('https://')) {
+                win.close();
                 setErr('Server returned an invalid install URL.');
                 return;
             }
-            window.location.replace(url);
+            win.location.href = url;
         } catch (error) {
+            win.close();
             setErr(extractMessage(error));
         } finally {
             setInstallBusy(false);

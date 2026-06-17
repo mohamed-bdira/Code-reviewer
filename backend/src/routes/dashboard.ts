@@ -63,11 +63,7 @@ async function aggregateFindingStats(userId: string): Promise<{
         }
         const visibility = await matchFindingsVisibleToUser(userId);
         const match = {
-            $and: [
-                visibility,
-                { repoFullName: { $in: repoNames } },
-                { category: { $in: [...DISPLAY_FINDING_CATEGORIES] } },
-            ],
+            $and: [visibility, { category: { $in: [...DISPLAY_FINDING_CATEGORIES] } }],
         };
         const agg = await PrReviewFinding.aggregate<{
             total: { n: number }[];

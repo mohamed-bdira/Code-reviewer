@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import dotenv from 'dotenv';
 import { parseEnforcerResponse } from '../src/enforcer/parseEnforcerResponse.js';
-import { delayMs, runGeminiReview } from '../src/review/geminiReview.js';
+import { delayMs, resolveGeminiModelName, runGeminiReview } from '../src/review/geminiReview.js';
+
+dotenv.config();
 
 const prompt = `You are a senior software engineer reviewing a pull request.
 Repository: owner/demo
@@ -35,6 +38,8 @@ async function main(): Promise<void> {
         console.log('[gemini-smoke] skipped (GEMINI_API_KEY not set)');
         return;
     }
+
+    console.log(`[gemini-smoke] model=${resolveGeminiModelName()}`);
 
     const diff = "--- /dev/null\n+++ b/backend/test.ts\n@@ -0,0 +1,3 @@\n+const ADMIN_PASSWORD = 'demo-admin-12345';\n";
     let lastErr: unknown;

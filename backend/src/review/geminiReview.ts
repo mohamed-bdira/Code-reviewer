@@ -1,8 +1,9 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 
 let client: GoogleGenerativeAI | null = null;
+let loggedModelName: string | null = null;
 
 function geminiApiKey(): string {
     const key = process.env.GEMINI_API_KEY?.trim() ?? '';
@@ -12,8 +13,8 @@ function geminiApiKey(): string {
     return key;
 }
 
-function geminiModelName(): string {
-    const raw = process.env.GEMINI_MODEL?.trim();
+export function resolveGeminiModelName(env: NodeJS.ProcessEnv = process.env): string {
+    const raw = env.GEMINI_MODEL?.trim();
     return raw && raw.length > 0 ? raw : DEFAULT_GEMINI_MODEL;
 }
 
@@ -71,9 +72,13 @@ export function computeRetryBackoffMs(attempt: number, baseDelayMs: number): num
 }
 
 async function runGeminiReviewOnce(prompt: string, diff: string): Promise<string> {
+    const modelName = resolveGeminiModelName();
+    if (loggedModelName !== modelName) {
+        loggedModelName = modelName;
+        console.log(`[geminiReview] model=${modelName}`);
+    }
     const fullPrompt = buildReviewPrompt(prompt, diff);
-    const model = getGeminiClient().getGenerativeModel({ model: geminiModelName() });
-    const timeoutMs = upstreamTimeoutMs();
+    const model = getGeminiClient().getGenerativeModel({ model: modelName });    const timeoutMs = upstreamTimeoutMs();
 
     const result = await Promise.race([
         model.generateContent(fullPrompt),
@@ -105,7 +110,16 @@ export async function runGeminiReview(prompt: string, diff: string): Promise<str
         } catch (err) {
             lastErr = err;
             const msg = err instanceof Error ? err.message : String(err);
-            const retriable = isRetriableUpstreamError(msg);
+            if (/403 forbidden|denied access/i.test(msg)) {
+                throw new Error(
+                    `${msg.slice(0, 240)} — create a fresh API key at https://aistudio.google.com/apikey and set GEMINI_API_KEY on Railway`,
+                );
+            }
+            if (/limit: 0.*gemini-2\.0/i.test(msg)) {
+                throw new Error(
+                    `Gemini model ${resolveGeminiModelName()} is shut down (quota limit 0). Set GEMINI_MODEL=${DEFAULT_GEMINI_MODEL} on Railway and redeploy.`,
+                );
+            }            const retriable = isRetriableUpstreamError(msg);
             if (!retriable || attempt >= maxAttempts) {
                 throw err;
             }

@@ -24,3 +24,18 @@ export function parseCategoriesQueryParam(raw: unknown): string[] | undefined {
     }
     return [...new Set(parsed)];
 }
+
+/** Fill in zero counts so every display category appears in dashboard/API responses. */
+export function normalizeCategoryCounts(
+    rows: ReadonlyArray<{ category: string; count: number } | { _id: string; count: number }>,
+): { category: string; count: number }[] {
+    const countByCategory = new Map<string, number>();
+    for (const row of rows) {
+        const key = '_id' in row ? String(row._id) : row.category;
+        countByCategory.set(key, row.count);
+    }
+    return DISPLAY_FINDING_CATEGORIES.map((category) => ({
+        category,
+        count: countByCategory.get(category) ?? 0,
+    }));
+}
